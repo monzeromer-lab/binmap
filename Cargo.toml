@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/binmap-core",
+    "crates/binmap-verify",
+    "crates/binmap-build",
+    "crates/binmap-measure",
+    "crates/binmap-session",
+    "crates/binmap-eval",
+    "crates/binmap-gui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/monzer-omer/binmap"
+
+[workspace.dependencies]
+binmap-core = { path = "crates/binmap-core" }
+binmap-verify = { path = "crates/binmap-verify" }
+binmap-build = { path = "crates/binmap-build" }
+binmap-measure = { path = "crates/binmap-measure" }
+binmap-session = { path = "crates/binmap-session" }
+
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+
+[profile.release]
+debug = 1
