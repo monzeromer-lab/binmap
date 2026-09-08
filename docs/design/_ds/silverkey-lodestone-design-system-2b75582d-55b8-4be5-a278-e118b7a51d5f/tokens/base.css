@@ -1,0 +1,13 @@
+/* Minimal element defaults so a bare page picks up the brand. */
+:root{color-scheme:dark}
+[data-theme="light"]{color-scheme:light}
+body{margin:0;background:var(--surface-app);color:var(--text-body);font:var(--type-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+h1,h2,h3,h4{font-family:var(--font-display);color:var(--text-primary);margin:0;letter-spacing:var(--tracking-display)}
+h1{font:var(--type-title)}h2{font:var(--type-heading)}h3{font:var(--type-subheading);letter-spacing:0}
+p{margin:0 0 var(--space-12);text-wrap:pretty}
+a{color:var(--text-link);text-decoration:none;border-bottom:1px solid rgba(255,111,21,.35);transition:var(--transition-control)}
+a:hover{color:var(--text-link-hover);border-bottom-color:var(--text-link-hover)}
+code,kbd,pre,samp{font-family:var(--font-mono);font-size:var(--fs-12)}
+::selection{background:rgba(255,111,21,.28);color:var(--text-primary)}
+:focus-visible{outline:var(--focus-ring-w) solid var(--focus-ring);outline-offset:var(--focus-ring-offset)}
+*{scrollbar-color:var(--slate-700) transparent;scrollbar-width:thin}

@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/colors.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/typography.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/radius.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/elevation.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/motion.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/semantic.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/theme-light.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/base.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/styles.css">
+<script src="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/_ds_bundle.js"></script>
+<script src="https://unpkg.com/lucide@0.446.0/dist/umd/lucide.js"></script>
+<style>
+  body { margin: 0; background: #0E1116; }
+  a { color: var(--text-accent); text-decoration: none; }
+  a:hover { color: var(--accent); }
+</style>
+</helmet>
+
+<x-import component-from-global-scope="deck-stage" from="./deck-stage.js" width="1920" height="1080" hint-size="100%,100%">
+
+<section data-label="Title" data-screen-label="01" data-speaker-notes="Open with the name and the one-line scope. Say the status out loud before anything else — pre-alpha, nothing ships yet. The whole pitch depends on being trusted, so lead with the limitation." style="display:flex;flex-direction:column;justify-content:center;gap:40px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;align-items:center;gap:16px">
+    <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="crosshair" size="{{ 40 }}" color="var(--text-accent)" hint-size="40px,40px"></x-import>
+    <span style="font-family:var(--font-display);font-weight:600;font-size:56px;letter-spacing:-0.02em;color:var(--text-primary)">binmap</span>
+  </div>
+  <h1 style="margin:0;max-width:30ch;font-family:var(--font-display);font-weight:600;font-size:104px;line-height:1.02;letter-spacing:-0.02em;color:var(--text-primary)">A source-aware binary analysis tool for Rust.</h1>
+  <p style="margin:0;max-width:52ch;font-family:var(--font-ui);font-weight:400;font-size:34px;line-height:1.5;color:var(--text-secondary)">It reads your source and your compiled binary at the same time, and uses that dual view to explain why your program is wrong, why it is slow, and why it is large.</p>
+  <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding-top:12px">
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--status-warn)">Status: pre-alpha. Nothing works yet.</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted)">Linux x86-64 · Apache-2.0 or MIT</span>
+  </div>
+</section>
+
+<section data-label="The gap" data-screen-label="02" data-speaker-notes="Both columns describe the same function. The left is what you wrote and can reason about; the right is what the linker actually produced. Every tool you already use lives on one side or the other — Clippy on the left, bloaty on the right — and the interesting questions are the ones that need both at once." style="display:flex;flex-direction:column;justify-content:center;gap:56px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">The problem</span>
+    <h2 style="margin:0;max-width:30ch;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">The gap between source and binary</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px">
+    <div style="display:flex;flex-direction:column;gap:24px;padding:40px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">What you wrote</span>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-family:var(--font-mono);font-size:28px;line-height:1.5;color:var(--text-primary)">pub fn dispatch&lt;M: Middleware&gt;(</span>
+        <span style="font-family:var(--font-mono);font-size:28px;line-height:1.5;color:var(--text-primary)">&nbsp;&nbsp;&amp;self, f: &amp;Frame, m: &amp;M</span>
+        <span style="font-family:var(--font-mono);font-size:28px;line-height:1.5;color:var(--text-primary)">) -&gt; Reply</span>
+      </div>
+      <span style="font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary)">One function. Clippy reads this. Your reviewer reads this.</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:24px;padding:40px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">What shipped</span>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-family:var(--font-mono);font-size:28px;line-height:1.5;color:var(--text-primary);font-variant-numeric:tabular-nums">14 instantiations</span>
+        <span style="font-family:var(--font-mono);font-size:28px;line-height:1.5;color:var(--text-primary);font-variant-numeric:tabular-nums">238,592 bytes</span>
+        <span style="font-family:var(--font-mono);font-size:28px;line-height:1.5;color:var(--text-primary);font-variant-numeric:tabular-nums">5.6% of the artifact</span>
+      </div>
+      <span style="font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary)">Twelve of them differ only in the middleware type. bloaty reads this. Nothing connects the two.</span>
+    </div>
+  </div>
+</section>
+
+<section data-label="Three questions" data-screen-label="03" data-speaker-notes="Three questions, one symbolization layer underneath. Point out that these are the questions people actually ask in issues and postmortems, phrased the way they ask them. Each has its own view in the window, and all three work with no model connected." style="display:flex;flex-direction:column;justify-content:center;gap:52px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">Scope</span>
+    <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">Three questions, one engine</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:32px">
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="hard-drive" size="{{ 36 }}" color="var(--text-secondary)" hint-size="36px,36px"></x-import>
+      <h3 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:44px;line-height:1.1;letter-spacing:-0.02em;color:var(--text-primary)">Why is this so big?</h3>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary)">Every byte attributed to a crate, a module, or one instantiation of a generic.</p>
+      <span style="font-family:var(--font-mono);font-size:24px;color:var(--text-muted);font-variant-numeric:tabular-nums">4,282,528 bytes · 41,208 symbols</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="flame" size="{{ 36 }}" color="var(--text-secondary)" hint-size="36px,36px"></x-import>
+      <h3 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:44px;line-height:1.1;letter-spacing:-0.02em;color:var(--text-primary)">Why is this slow?</h3>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary)">Samples attributed through inlining, to the line you wrote rather than where the compiler put it.</p>
+      <span style="font-family:var(--font-mono);font-size:24px;color:var(--text-muted);font-variant-numeric:tabular-nums">31.4% in one inlined compare</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="bug" size="{{ 36 }}" color="var(--text-secondary)" hint-size="36px,36px"></x-import>
+      <h3 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:44px;line-height:1.1;letter-spacing:-0.02em;color:var(--text-primary)">Why did this crash?</h3>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary)">A core dump from an optimized build, with locals the debugger reports as optimized out.</p>
+      <span style="font-family:var(--font-mono);font-size:24px;color:var(--text-muted);font-variant-numeric:tabular-nums">label.len = 64, recovered from r12</span>
+    </div>
+  </div>
+</section>
+
+<section data-label="What it measures" data-screen-label="04" data-speaker-notes="This is the deterministic layer, and it is the whole product. No model is involved in any row on this table. Worth saying that none of these tools is new — the work is reading them together and keeping the provenance straight." style="display:flex;flex-direction:column;justify-content:center;gap:48px;padding:100px 100px 80px;background:var(--surface-panel);box-sizing:border-box">
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">The deterministic layer</span>
+    <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">What the engine measures</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:340px 1fr 300px;gap:0 40px;align-items:baseline">
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);padding-bottom:20px;border-bottom:1px solid var(--border-subtle)">Tool</span>
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);padding-bottom:20px;border-bottom:1px solid var(--border-subtle)">What it gives</span>
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);padding-bottom:20px;border-bottom:1px solid var(--border-subtle)">Reported as</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:24px 0;border-bottom:1px solid var(--border-subtle)">bloaty · object</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-body);padding:24px 0;border-bottom:1px solid var(--border-subtle)">Sections, symbols, and the byte cost of each</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:24px 0;border-bottom:1px solid var(--border-subtle)">● measured</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:24px 0;border-bottom:1px solid var(--border-subtle)">gimli · addr2line</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-body);padding:24px 0;border-bottom:1px solid var(--border-subtle)">DWARF line tables, inline chains, location lists</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:24px 0;border-bottom:1px solid var(--border-subtle)">● measured</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:24px 0;border-bottom:1px solid var(--border-subtle)">perf · samply</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-body);padding:24px 0;border-bottom:1px solid var(--border-subtle)">CPU samples and PMU counters</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:24px 0;border-bottom:1px solid var(--border-subtle)">● measured</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:24px 0;border-bottom:1px solid var(--border-subtle)">hyperfine</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-body);padding:24px 0;border-bottom:1px solid var(--border-subtle)">Runtime, with the machine's noise floor measured first</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:24px 0;border-bottom:1px solid var(--border-subtle)">● measured</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:24px 0">rr · framehop</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-body);padding:24px 0">Deterministic replay, unwinding, reverse search</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:24px 0">● measured</span>
+  </div>
+</section>
+
+<section data-label="Provenance" data-screen-label="05" data-speaker-notes="This is the part that matters to a sceptical audience. Three words, fixed vocabulary, never paraphrased. Orange is deliberately assigned to the model layer, because a machine claim is the one that needs reading differently. A claim citing evidence the engine did not issue is rejected before it reaches the screen." style="display:flex;flex-direction:column;justify-content:center;gap:56px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">Fixed vocabulary</span>
+    <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">Measured, derived, inferred</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:40px">
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <span style="font-family:var(--font-mono);font-size:88px;line-height:1;color:var(--status-pass)">●</span>
+      <span style="font-family:var(--font-display);font-weight:600;font-size:44px;letter-spacing:-0.02em;color:var(--text-primary)">Measured</span>
+      <p style="margin:0;font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-secondary)">A tool ran. The command, its arguments and a digest of its output are all recorded.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <span style="font-family:var(--font-mono);font-size:88px;line-height:1;color:var(--text-secondary)">◈</span>
+      <span style="font-family:var(--font-display);font-weight:600;font-size:44px;letter-spacing:-0.02em;color:var(--text-primary)">Derived</span>
+      <p style="margin:0;font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-secondary)">One of our own rules reached a conclusion from measured inputs. The rule is named.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <span style="font-family:var(--font-mono);font-size:88px;line-height:1;color:var(--text-accent)">◆</span>
+      <span style="font-family:var(--font-display);font-weight:600;font-size:44px;letter-spacing:-0.02em;color:var(--text-primary)">Inferred</span>
+      <p style="margin:0;font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-secondary)">A model said so. Capped at Probable, and it may only cite evidence the engine issued.</p>
+    </div>
+  </div>
+  <p style="margin:0;max-width:80ch;font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-body)">The interface never shows one without the other. Running with no reasoner connected is a first-class setting, and the whole test suite runs that way.</p>
+</section>
+
+<section data-label="Evidence on screen" data-screen-label="06" data-speaker-notes="Show the real thing here, or switch to the app for a live look. The card states the claim; the row underneath is the tool call that produced it, with the digest. Clicking any evidence item expands the raw output. A finding is never constructed without at least one evidence item — that is an invariant in the code, not a UI convention." style="display:flex;flex-direction:column;justify-content:center;gap:44px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;align-items:flex-end;gap:40px;flex-wrap:wrap">
+    <div style="display:flex;flex-direction:column;gap:20px;flex:1;min-width:0">
+      <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">The Findings Inspector</span>
+      <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">Evidence in the interface</h2>
+    </div>
+    <span style="font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary);max-width:34ch">A claim and its evidence occupy the same screen. The inspector is always present, in every view.</span>
+  </div>
+  <div style="height:660px;overflow:hidden">
+    <div style="width:840px;transform:scale(2);transform-origin:top left;display:grid;gap:8px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.FindingCard" kind="MonomorphizationBloat" title="Router::dispatch monomorphized 14 times" detail="Twelve of the fourteen instantiations differ only in their middleware type parameter, and all twelve are reached from one call site that discards the concrete type." location="syd-route/src/router.rs:118" impact="−238,592 bytes (5.6%)" confidence="probable" provenance="inferred" evidenceCount="{{ 6 }}" selected="{{ true }}" hint-size="840px,120px"></x-import>
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.EvidenceItem" summary="14 instantiations share the generic origin dispatch&lt;M&gt;" kind="measured" tool="binmap-core 0.4.1" args="group_monomorphizations --crate syd-route --min-bytes 4096" digest="7c41e0…8a2f" hint-size="840px,40px"></x-import>
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.EvidenceItem" summary="Collapse candidate: no caller matches on a concrete M" kind="derived" tool="rule: mono_collapse_candidate" hint-size="840px,40px"></x-import>
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.EvidenceItem" summary="Boxing the middleware preserves observable behaviour" kind="inferred" tool="local/qwen3-coder-next" args="cites 4 evidence items" hint-size="840px,40px"></x-import>
+    </div>
+  </div>
+</section>
+
+<section data-label="Trust tiers" data-screen-label="07" data-speaker-notes="Autonomy is one visible dial with four settings, and it ships on Propose. Nothing above Propose happens without the user raising the tier deliberately. This is the answer to the obvious objection: no, it will not touch your repository." style="display:flex;flex-direction:column;justify-content:center;gap:52px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">One visible dial</span>
+    <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">Trust tiers</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:28px">
+    <div style="display:flex;flex-direction:column;gap:16px;padding:36px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted)">1</span>
+      <span style="font-family:var(--font-display);font-weight:600;font-size:40px;letter-spacing:-0.02em;color:var(--text-primary)">Observe</span>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.4;color:var(--text-secondary)">Measures and explains. Read-only.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;padding:36px;background:var(--surface-selected);border:1px solid var(--accent);border-radius:12px">
+      <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-accent)">2 · default</span>
+      <span style="font-family:var(--font-display);font-weight:600;font-size:40px;letter-spacing:-0.02em;color:var(--text-primary)">Propose</span>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.4;color:var(--text-body)">Generates diffs. Never applies them.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;padding:36px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted)">3</span>
+      <span style="font-family:var(--font-display);font-weight:600;font-size:40px;letter-spacing:-0.02em;color:var(--text-primary)">Tune</span>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.4;color:var(--text-secondary)">Writes build configuration only, after the tests pass.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;padding:36px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted)">4</span>
+      <span style="font-family:var(--font-display);font-weight:600;font-size:40px;letter-spacing:-0.02em;color:var(--text-primary)">Autonomous</span>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.4;color:var(--text-secondary)">Patches source and opens a pull request. Explicit opt-in.</p>
+    </div>
+  </div>
+</section>
+
+<section data-label="Verification" data-screen-label="08" data-speaker-notes="Read the fourth row out. A 0.6% improvement on a machine whose noise floor is 0.9% is reported as inconclusive, not as a win — that single behaviour is the difference between a measurement tool and a demo. Miri is skipped here because no unsafe was touched, and it says so rather than claiming a pass." style="display:flex;flex-direction:column;justify-content:center;gap:48px;padding:100px 100px 80px;background:var(--surface-panel);box-sizing:border-box">
+  <div style="display:flex;align-items:flex-end;gap:40px;flex-wrap:wrap">
+    <div style="display:flex;flex-direction:column;gap:20px;flex:1;min-width:0">
+      <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">Nothing is applied unverified</span>
+      <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">The verification harness</h2>
+    </div>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted);font-variant-numeric:tabular-nums">noise floor on this machine: 0.9%</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr auto auto;gap:0 40px;align-items:baseline">
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:22px 0;border-bottom:1px solid var(--border-subtle)">Builds</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-secondary);padding:22px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">3m 41s</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:22px 0;border-bottom:1px solid var(--border-subtle)">✓ pass</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:22px 0;border-bottom:1px solid var(--border-subtle)">TestsPass</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-secondary);padding:22px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">412 passed</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:22px 0;border-bottom:1px solid var(--border-subtle)">✓ pass</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:22px 0;border-bottom:1px solid var(--border-subtle)">NoNewWarnings</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-secondary);padding:22px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">0 new</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:22px 0;border-bottom:1px solid var(--border-subtle)">✓ pass</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:22px 0;border-bottom:1px solid var(--border-subtle)">BenchmarkNotWorse { significance: 0.05 }</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-secondary);padding:22px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">+0.6% n.s.</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-warn);padding:22px 0;border-bottom:1px solid var(--border-subtle)">! inconclusive</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:22px 0;border-bottom:1px solid var(--border-subtle)">SizeNotWorse</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-secondary);padding:22px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">−233,472 bytes</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--status-pass);padding:22px 0;border-bottom:1px solid var(--border-subtle)">✓ pass</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-primary);padding:22px 0">MiriClean</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-secondary);padding:22px 0">no unsafe touched</span>
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-muted);padding:22px 0">– skipped</span>
+  </div>
+</section>
+
+<section data-label="Targets" data-screen-label="09" data-speaker-notes="Rust is the reference backend. .NET and web bundles came later and reuse most of the interface, but their capabilities genuinely differ — there is no machine-code layer in a bundle and no replay for a managed dump. The app states that per target instead of showing an empty view." style="display:flex;flex-direction:column;justify-content:center;gap:48px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">Capability model</span>
+    <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">Targets and capabilities</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:32px">
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <span style="font-family:var(--font-display);font-weight:600;font-size:40px;letter-spacing:-0.02em;color:var(--text-primary)">Rust</span>
+      <span style="font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">native ELF + DWARF</span>
+      <span style="font-family:var(--font-ui);font-size:28px;line-height:1.5;color:var(--text-body)">Size, config sweep, core dumps, sampling, replay. Everything.</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <span style="font-family:var(--font-display);font-weight:600;font-size:40px;letter-spacing:-0.02em;color:var(--text-primary)">.NET</span>
+      <span style="font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">NativeAOT · CoreCLR</span>
+      <span style="font-family:var(--font-ui);font-size:28px;line-height:1.5;color:var(--text-body)">ILC size accounting, trim reasons from the dependency graph, managed dumps.</span>
+      <span style="font-family:var(--font-ui);font-size:28px;line-height:1.5;color:var(--text-secondary)">✗ No replay.</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:12px">
+      <span style="font-family:var(--font-display);font-weight:600;font-size:40px;letter-spacing:-0.02em;color:var(--text-primary)">Web</span>
+      <span style="font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">bundle + source maps</span>
+      <span style="font-family:var(--font-ui);font-size:28px;line-height:1.5;color:var(--text-body)">Raw, gzip and brotli side by side. Bundler sweep. V8 profiles mapped to TypeScript.</span>
+      <span style="font-family:var(--font-ui);font-size:28px;line-height:1.5;color:var(--text-secondary)">✗ No disassembly, no replay.</span>
+    </div>
+  </div>
+</section>
+
+<section data-label="Non-goals" data-screen-label="10" data-speaker-notes="Read two or three of these aloud. For this audience the non-goals build more confidence than any feature list, and they are the reason the project might actually ship. Before proposing a feature, read them." style="display:flex;flex-direction:column;justify-content:center;gap:48px;padding:100px 100px 80px;background:var(--surface-panel);box-sizing:border-box">
+  <div style="display:flex;align-items:flex-end;gap:40px;flex-wrap:wrap">
+    <div style="display:flex;flex-direction:column;gap:20px;flex:1;min-width:0">
+      <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">Written down and binding</span>
+      <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">Non-goals</h2>
+    </div>
+    <span style="font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary);max-width:36ch">Recording these matters more than recording the goals. A solo project dies from scope creep.</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px 48px">
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <span style="flex:none;font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">N1</span>
+      <span style="font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-body)">Not an IDE. It reads your code; you edit elsewhere.</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <span style="flex:none;font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">N2</span>
+      <span style="font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-body)">Not a linter. If Clippy can find it, binmap does not try.</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <span style="flex:none;font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">N3</span>
+      <span style="font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-body)">Not cross-platform in v1. Linux x86-64 only.</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <span style="flex:none;font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">N4</span>
+      <span style="font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-body)">Not a replacement for GDB. It drives debuggers; it is not one.</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <span style="flex:none;font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">N5</span>
+      <span style="font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-body)">Not a hosted service. No accounts, no server, no telemetry.</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <span style="flex:none;font-family:var(--font-mono);font-size:26px;color:var(--text-muted)">N7</span>
+      <span style="font-family:var(--font-ui);font-size:30px;line-height:1.45;color:var(--text-body)">No autonomous commits, and never as the default.</span>
+    </div>
+  </div>
+</section>
+
+<section data-label="Status" data-screen-label="11" data-speaker-notes="Be blunt here. Phase 0 is in progress and nothing has shipped. Nothing from phase N+1 starts until phase N has a release. Timelines are one person's estimates; the polyglot backends add roughly eighteen weeks across the plan." style="display:flex;flex-direction:column;justify-content:center;gap:44px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;align-items:flex-end;gap:40px;flex-wrap:wrap">
+    <div style="display:flex;flex-direction:column;gap:20px;flex:1;min-width:0">
+      <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">Phase gates</span>
+      <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">Status and phases</h2>
+    </div>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--status-warn)">pre-alpha · nothing has shipped</span>
+  </div>
+  <div style="display:grid;grid-template-columns:80px 1fr 260px 200px;gap:0 32px;align-items:baseline">
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-accent);padding:20px 0;border-bottom:1px solid var(--border-subtle)">0</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-primary);padding:20px 0;border-bottom:1px solid var(--border-subtle)">Config autotuner — the build-profile space, measured on your crate</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-secondary);padding:20px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">5–7 weeks</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--status-info);padding:20px 0;border-bottom:1px solid var(--border-subtle)">in progress</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-muted);padding:20px 0;border-bottom:1px solid var(--border-subtle)">1</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-primary);padding:20px 0;border-bottom:1px solid var(--border-subtle)">Size attribution and monomorphization grouping</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-secondary);padding:20px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">6–9 weeks</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted);padding:20px 0;border-bottom:1px solid var(--border-subtle)">planned</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-muted);padding:20px 0;border-bottom:1px solid var(--border-subtle)">2</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-primary);padding:20px 0;border-bottom:1px solid var(--border-subtle)">Crash analysis — core dumps, inline frames, recovered locals</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-secondary);padding:20px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">7–10 weeks</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted);padding:20px 0;border-bottom:1px solid var(--border-subtle)">planned</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-muted);padding:20px 0;border-bottom:1px solid var(--border-subtle)">3</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-primary);padding:20px 0;border-bottom:1px solid var(--border-subtle)">Performance attribution through inlining</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-secondary);padding:20px 0;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums">5–7 weeks</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted);padding:20px 0;border-bottom:1px solid var(--border-subtle)">planned</span>
+
+    <span style="font-family:var(--font-mono);font-size:30px;color:var(--text-muted);padding:20px 0">4</span>
+    <span style="font-family:var(--font-ui);font-size:30px;color:var(--text-primary);padding:20px 0">Replay debugging — rr traces, reverse search, watchpoints</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-secondary);padding:20px 0;font-variant-numeric:tabular-nums">open-ended</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted);padding:20px 0">not started</span>
+  </div>
+</section>
+
+<section data-label="Contributions" data-screen-label="12" data-speaker-notes="This is the ask. The easiest places to start are the deterministic engines and the artifact format, and none of that work involves the model layer at all. If you have ever read a DWARF spec for fun, the crash analyzer is waiting for you." style="display:flex;flex-direction:column;justify-content:center;gap:48px;padding:100px 100px 80px;background:var(--surface-panel);box-sizing:border-box">
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <span style="font-family:var(--font-mono);font-size:24px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">No model work required</span>
+    <h2 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:64px;line-height:1.08;letter-spacing:-0.02em;color:var(--text-primary)">Where contributions land</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:32px">
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-raised);border:1px solid var(--border-subtle);border-radius:12px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="cog" size="{{ 36 }}" color="var(--text-secondary)" hint-size="36px,36px"></x-import>
+      <h3 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:40px;line-height:1.1;letter-spacing:-0.02em;color:var(--text-primary)">The analysis engines</h3>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary)">Attribution, demangling, unwinding, register recovery. Deterministic, testable, and the part that decides whether the product is any good.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-raised);border:1px solid var(--border-subtle);border-radius:12px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="braces" size="{{ 36 }}" color="var(--text-secondary)" hint-size="36px,36px"></x-import>
+      <h3 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:40px;line-height:1.1;letter-spacing:-0.02em;color:var(--text-primary)">The artifact format</h3>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary)">binmap.json carries findings, evidence and gate results. Schema work here unblocks every consumer, including CI dashboards nobody has written yet.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px;padding:40px;background:var(--surface-raised);border:1px solid var(--border-subtle);border-radius:12px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="plug" size="{{ 36 }}" color="var(--text-secondary)" hint-size="36px,36px"></x-import>
+      <h3 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:40px;line-height:1.1;letter-spacing:-0.02em;color:var(--text-primary)">Tool adapters</h3>
+      <p style="margin:0;font-family:var(--font-ui);font-size:28px;line-height:1.45;color:var(--text-secondary)">Every backend reads someone else's output format, and every one of those formats drifts. Snapshot fixtures and version probes are self-contained tasks.</p>
+    </div>
+  </div>
+</section>
+
+<section data-label="Close" data-screen-label="13" data-speaker-notes="Close on the honest ask. Nothing to install yet, so the useful contribution today is reading the design documents and arguing with them. Repository link in the description. Say the license." style="display:flex;flex-direction:column;justify-content:center;gap:44px;padding:100px 100px 80px;background:var(--surface-app);box-sizing:border-box">
+  <div style="display:flex;align-items:center;gap:16px">
+    <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="crosshair" size="{{ 36 }}" color="var(--text-accent)" hint-size="36px,36px"></x-import>
+    <span style="font-family:var(--font-display);font-weight:600;font-size:44px;letter-spacing:-0.02em;color:var(--text-primary)">binmap</span>
+  </div>
+  <h2 style="margin:0;max-width:34ch;font-family:var(--font-display);font-weight:600;font-size:80px;line-height:1.05;letter-spacing:-0.02em;color:var(--text-primary)">What the project needs</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px 56px;max-width:1500px">
+    <span style="font-family:var(--font-ui);font-size:32px;line-height:1.45;color:var(--text-body)">Read the PRD and the design documents, and argue with them in an issue.</span>
+    <span style="font-family:var(--font-ui);font-size:32px;line-height:1.45;color:var(--text-body)">Bring a crate with a size or crash problem worth using as a test case.</span>
+    <span style="font-family:var(--font-ui);font-size:32px;line-height:1.45;color:var(--text-body)">Take a good-first-issue on the deterministic layer. No model work involved.</span>
+    <span style="font-family:var(--font-ui);font-size:32px;line-height:1.45;color:var(--text-body)">Tell me which of the non-goals is wrong, and why it is worth the scope.</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:32px;flex-wrap:wrap;padding-top:12px">
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-accent)">Repository link in the description</span>
+    <span style="font-family:var(--font-mono);font-size:28px;color:var(--text-muted)">Apache-2.0 or MIT · no telemetry · nothing leaves your machine</span>
+  </div>
+</section>
+
+</x-import>
+</x-dc>
+</body>
+</html>

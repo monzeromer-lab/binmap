@@ -1,0 +1,13 @@
+/* SilverKey / Lodestone webfonts.
+   SUBSTITUTION NOTICE: no font binaries shipped with the source material.
+   Poppins is the closest Google Fonts match to the SilverKey wordmark's
+   geometric sans; IBM Plex Sans and JetBrains Mono are chosen for the
+   desktop app's UI and code surfaces. Replace these @import lines with
+   local @font-face rules when the real binaries are provided. */
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
+:root{
+  --font-display:"Poppins","Poppins Fallback",system-ui,sans-serif;
+  --font-ui:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --font-mono:"JetBrains Mono","IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}

@@ -1,0 +1,15 @@
+:root{
+  /* Fast, short, no bounce. This is a measurement instrument. */
+  --dur-instant:80ms; /* @kind other */
+  --dur-fast:120ms; /* @kind other */
+  --dur-base:160ms; /* @kind other */
+  --dur-slow:240ms; /* @kind other */
+  --dur-stream:400ms; /* @kind other */   /* streamed finding entering the list */
+
+  --ease-standard:cubic-bezier(.2,0,.2,1); /* @kind other */
+  --ease-out:cubic-bezier(0,0,.2,1); /* @kind other */
+  --ease-in:cubic-bezier(.4,0,1,1); /* @kind other */
+
+  --transition-control:background-color var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard); /* @kind other */
+  --transition-surface:background-color var(--dur-base) var(--ease-standard); /* @kind other */
+}

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/colors.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/typography.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/radius.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/elevation.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/motion.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/semantic.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/theme-light.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/tokens/base.css">
+<link rel="stylesheet" href="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/styles.css">
+<script src="_ds/silverkey-lodestone-design-system-2b75582d-55b8-4be5-a278-e118b7a51d5f/_ds_bundle.js"></script>
+<script src="https://unpkg.com/lucide@0.446.0/dist/umd/lucide.js"></script>
+<style>
+  body { margin: 0; background: var(--surface-app); }
+  a { color: var(--text-accent); text-decoration: none; }
+  a:hover { color: var(--accent); text-decoration: underline; }
+</style>
+</helmet>
+
+<div data-theme="{{ theme }}" style="width:100%;min-height:100vh;background:var(--surface-app);font:var(--type-body);color:var(--text-body);box-sizing:border-box">
+
+  <header style="position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 24px;background:var(--surface-raised);border-bottom:1px solid var(--border-subtle)">
+    <div style="display:flex;align-items:center;gap:8px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="crosshair" size="{{ 18 }}" color="var(--text-accent)" hint-size="18px,18px"></x-import>
+      <span style="font-family:var(--font-display);font-weight:600;font-size:17px;letter-spacing:-0.02em;color:var(--text-primary)">binmap</span>
+      <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">0.4.1-pre</span>
+    </div>
+    <nav style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;font:var(--type-body);font-size:var(--fs-12)">
+      <a href="#measures">What it measures</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#targets">Targets</a>
+      <a href="#limits">Non-goals</a>
+      <a href="#status">Status</a>
+    </nav>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Badge" tone="warn" mono="{{ true }}" hint-size="auto,20px">pre-alpha</x-import>
+      <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">Apache-2.0 or MIT</span>
+    </div>
+  </header>
+
+  <section style="max-width:1080px;margin:0 auto;padding:64px 24px 48px;display:grid;gap:24px">
+    <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-accent)">A source-aware binary analysis tool for Rust</span>
+    <h1 style="margin:0;max-width:26ch;font-family:var(--font-display);font-weight:600;font-size:clamp(34px,5.4vw,58px);line-height:1.06;letter-spacing:-0.02em;color:var(--text-primary);text-wrap:pretty">Why is this wrong, why is this slow, why is this so big.</h1>
+    <p style="margin:0;max-width:64ch;font:var(--type-body);font-size:15px;line-height:1.6;color:var(--text-secondary);text-wrap:pretty">Binmap reads your source and your compiled binary at the same time, and uses that dual view to explain why your program is wrong, why it is slow, and why it is large — then proposes changes and proves they work.</p>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:4px">
+      <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Badge" tone="warn" icon="triangle-alert" hint-size="auto,20px">Status: pre-alpha. Nothing works yet.</x-import>
+      <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">Linux x86-64 · Rust toolchain · bloaty and hyperfine on PATH</span>
+    </div>
+    <div style="max-width:420px;padding:12px 14px;background:var(--surface-code);border:1px solid var(--border-subtle);border-radius:var(--radius-5);display:grid;gap:4px">
+      <span style="font:var(--type-code);font-size:var(--fs-12);color:var(--text-secondary)"># No build published yet.</span>
+      <span style="font:var(--type-code);font-size:var(--fs-12);color:var(--text-secondary)">binmap-0.4.1-linux-x86_64.AppImage</span>
+    </div>
+  </section>
+
+  <section id="measures" style="max-width:1080px;margin:0 auto;padding:8px 24px 56px;display:grid;gap:20px">
+    <div style="display:grid;gap:8px">
+      <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">Three questions, one engine</span>
+      <p style="margin:0;max-width:70ch;font:var(--type-body);color:var(--text-secondary);text-wrap:pretty">The same symbolization layer answers all three, in one window. Every session exports a <code style="font:var(--type-code);color:var(--text-body)">binmap.json</code> artifact, and every view works with no reasoner connected.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="3">
+        <div style="display:grid;gap:10px;align-content:start;padding:16px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:var(--radius-8)">
+          <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="{{ q.icon }}" size="{{ 20 }}" color="var(--text-accent)" hint-size="20px,20px"></x-import>
+          <h3 style="margin:0;font-family:var(--font-display);font-weight:600;font-size:18px;letter-spacing:-0.02em;color:var(--text-primary)">{{ q.title }}</h3>
+          <p style="margin:0;font:var(--type-body);font-size:var(--fs-12);line-height:1.55;color:var(--text-secondary);text-wrap:pretty">{{ q.body }}</p>
+          <span style="font-family:var(--font-ui);font-weight:500;font-size:var(--fs-12);line-height:1.4;color:var(--text-body)">{{ q.where }}</span>
+          <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted);font-variant-numeric:tabular-nums">{{ q.example }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:grid;gap:6px;padding-top:4px">
+      <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">Nine views in one window</span>
+      <p style="margin:0;max-width:74ch;font:var(--type-body);font-size:var(--fs-12);line-height:1.55;color:var(--text-secondary);text-wrap:pretty">Target, Size, Tune, Failure, Perf, Replay, Load, Agent and Environment, with a Findings Inspector that stays on screen beside all of them — because a claim and its evidence belong on the same screen.</p>
+    </div>
+  </section>
+
+  <section style="border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle);background:var(--surface-panel)">
+    <div style="max-width:1080px;margin:0 auto;padding:56px 24px;display:grid;gap:20px">
+      <div style="display:grid;gap:8px">
+        <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">Every session exports its evidence</span>
+        <p style="margin:0;max-width:70ch;font:var(--type-body);color:var(--text-secondary);text-wrap:pretty">The exported artifact is the same data the Findings Inspector shows on screen: every claim, the tool that produced it, and a content digest of that tool&#39;s output. A finding is never constructed without at least one evidence item.</p>
+      </div>
+      <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-8);overflow:hidden">
+        <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.CodeBlock" lines="{{ artifactLines }}" gutter="{{ false }}" hint-size="100%,470px"></x-import>
+      </div>
+    </div>
+  </section>
+
+  <section id="evidence" style="max-width:1080px;margin:0 auto;padding:56px 24px;display:grid;gap:20px">
+    <div style="display:grid;gap:8px">
+      <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">Deterministic engine, optional model layer</span>
+      <h2 style="margin:0;max-width:34ch;font-family:var(--font-display);font-weight:600;font-size:clamp(24px,3.2vw,32px);letter-spacing:-0.02em;color:var(--text-primary);text-wrap:pretty">The engine computes every fact. The model may only cite them.</h2>
+      <p style="margin:0;max-width:70ch;font:var(--type-body);color:var(--text-secondary);text-wrap:pretty">Findings carry a provenance chain, and no claim is shown without the tool output that supports it. A model claim is capped at Probable and lists the evidence it cites. Running with no reasoner is a first-class setting, not a degraded mode, and the whole test suite runs that way.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+      <sc-for list="{{ provenance }}" as="p" hint-placeholder-count="3">
+        <div style="display:grid;gap:8px;align-content:start;padding:16px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:var(--radius-8)">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span style="font:var(--type-code);font-size:16px;color:{{ p.color }}">{{ p.glyph }}</span>
+            <span style="font-family:var(--font-ui);font-weight:600;font-size:var(--fs-13);color:var(--text-primary)">{{ p.word }}</span>
+          </div>
+          <p style="margin:0;font:var(--type-body);font-size:var(--fs-12);line-height:1.55;color:var(--text-secondary);text-wrap:pretty">{{ p.body }}</p>
+          <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">{{ p.tool }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:grid;gap:12px;padding-top:8px">
+      <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">Autonomy is one visible dial</span>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+        <sc-for list="{{ tiers }}" as="t" hint-placeholder-count="4">
+          <div style="display:grid;gap:6px;align-content:start;padding:14px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:var(--radius-8)">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">{{ t.n }}</span>
+              <span style="font-family:var(--font-ui);font-weight:600;font-size:var(--fs-13);color:var(--text-primary)">{{ t.name }}</span>
+              <sc-if value="{{ t.isDefault }}">
+                <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Badge" tone="accent" hint-size="auto,18px">default</x-import>
+              </sc-if>
+            </div>
+            <p style="margin:0;font:var(--type-body);font-size:var(--fs-12);line-height:1.5;color:var(--text-secondary);text-wrap:pretty">{{ t.body }}</p>
+          </div>
+        </sc-for>
+      </div>
+      <p style="margin:0;max-width:70ch;font:var(--type-body);font-size:var(--fs-12);color:var(--text-secondary);text-wrap:pretty">Nothing is applied without passing the verifier: the build succeeds, tests pass, the benchmark shows a statistically significant win against the machine's measured noise floor, and sanitizers are clean if <code style="font:var(--type-code);color:var(--text-body)">unsafe</code> was touched.</p>
+    </div>
+  </section>
+
+  <section id="targets" style="border-top:1px solid var(--border-subtle);background:var(--surface-panel)">
+    <div style="max-width:1080px;margin:0 auto;padding:56px 24px;display:grid;gap:20px">
+      <div style="display:grid;gap:8px">
+        <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">Targets and what each one can answer</span>
+        <p style="margin:0;max-width:70ch;font:var(--type-body);color:var(--text-secondary);text-wrap:pretty">Capabilities differ by artifact, so Binmap states them per target rather than degrading quietly. A view that a target cannot support is absent, not empty.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+        <sc-for list="{{ targets }}" as="t" hint-placeholder-count="3">
+          <div style="display:grid;gap:10px;align-content:start;padding:16px;background:var(--surface-raised);border:1px solid var(--border-subtle);border-radius:var(--radius-8)">
+            <div style="display:flex;align-items:center;gap:8px">
+              <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="{{ t.icon }}" size="{{ 16 }}" color="var(--text-muted)" hint-size="16px,16px"></x-import>
+              <span style="font-family:var(--font-ui);font-weight:600;font-size:var(--fs-13);color:var(--text-primary)">{{ t.name }}</span>
+              <span style="margin-left:auto;font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">{{ t.phase }}</span>
+            </div>
+            <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-secondary)">{{ t.artifact }}</span>
+            <div style="display:grid;gap:5px">
+              <sc-for list="{{ t.has }}" as="h" hint-placeholder-count="4">
+                <div style="display:flex;align-items:baseline;gap:8px;font:var(--type-body);font-size:var(--fs-12);color:var(--text-body)">
+                  <span style="color:var(--status-pass)">✓</span><span>{{ h }}</span>
+                </div>
+              </sc-for>
+              <sc-for list="{{ t.hasnt }}" as="n" hint-placeholder-count="2">
+                <div style="display:flex;align-items:baseline;gap:8px;font:var(--type-body);font-size:var(--fs-12);color:var(--text-secondary)">
+                  <span style="color:var(--status-fail)">✗</span><span>{{ n }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="limits" style="border-top:1px solid var(--border-subtle);max-width:1080px;margin:0 auto;padding:56px 24px;display:grid;gap:20px">
+    <div style="display:grid;gap:8px">
+      <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">Non-goals</span>
+      <h2 style="margin:0;max-width:34ch;font-family:var(--font-display);font-weight:600;font-size:clamp(24px,3.2vw,32px);letter-spacing:-0.02em;color:var(--text-primary);text-wrap:pretty">Recording these matters more than recording the goals.</h2>
+      <p style="margin:0;max-width:70ch;font:var(--type-body);color:var(--text-secondary);text-wrap:pretty">A solo project dies from scope creep, so the list is written down and binding.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px">
+      <sc-for list="{{ nonGoals }}" as="n" hint-placeholder-count="6">
+        <div style="display:flex;align-items:baseline;gap:10px;padding:12px 14px;background:var(--surface-panel);border:1px solid var(--border-subtle);border-radius:var(--radius-5)">
+          <span style="flex:none;font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">{{ n.id }}</span>
+          <span style="font:var(--type-body);font-size:var(--fs-12);line-height:1.5;color:var(--text-body);text-wrap:pretty"><strong style="color:var(--text-primary);font-weight:600">{{ n.title }}</strong> {{ n.body }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="status" style="border-top:1px solid var(--border-subtle);background:var(--surface-panel)">
+    <div style="max-width:1080px;margin:0 auto;padding:56px 24px;display:grid;gap:20px">
+      <div style="display:grid;gap:8px">
+        <span style="font:var(--type-caps);letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)">Status</span>
+        <p style="margin:0;max-width:70ch;font:var(--type-body);color:var(--text-secondary);text-wrap:pretty">Nothing from phase N+1 starts until phase N has shipped a release. Timelines are estimates for one person, and the polyglot backends add roughly eighteen weeks across the plan.</p>
+      </div>
+      <div style="display:grid;gap:8px">
+        <sc-for list="{{ phases }}" as="p" hint-placeholder-count="5">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 16px;align-items:baseline;padding:14px 16px;background:var(--surface-raised);border:1px solid var(--border-subtle);border-radius:var(--radius-5)">
+            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0">
+              <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-accent)">{{ p.n }}</span>
+              <span style="font-family:var(--font-ui);font-weight:600;font-size:var(--fs-13);color:var(--text-primary)">{{ p.name }}</span>
+              <span style="font:var(--type-body);font-size:var(--fs-12);color:var(--text-secondary);text-wrap:pretty">{{ p.body }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;justify-self:end">
+              <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-secondary);font-variant-numeric:tabular-nums">{{ p.weeks }}</span>
+              <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Badge" tone="{{ p.tone }}" hint-size="auto,20px">{{ p.state }}</x-import>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <footer style="border-top:1px solid var(--border-subtle);max-width:1080px;margin:0 auto;padding:40px 24px 56px;display:grid;gap:16px">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:baseline">
+      <div style="display:flex;align-items:center;gap:8px">
+        <x-import component-from-global-scope="SilverKeyLodestoneDesignSystem_2b7558.Icon" name="crosshair" size="{{ 16 }}" color="var(--text-accent)" hint-size="16px,16px"></x-import>
+        <span style="font-family:var(--font-display);font-weight:600;font-size:var(--fs-13);letter-spacing:-0.02em;color:var(--text-primary)">binmap</span>
+      </div>
+      <span style="font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">Desktop application · artifact binmap.json · config binmap.toml</span>
+      <span style="margin-left:auto;font:var(--type-code);font-size:var(--fs-11);color:var(--text-muted)">No accounts, no server, no telemetry.</span>
+    </div>
+    <p style="margin:0;max-width:74ch;font:var(--type-body);font-size:var(--fs-11);color:var(--text-secondary);text-wrap:pretty">Requires Linux x86-64, a Rust toolchain, and bloaty and hyperfine on PATH — the app drives them and the Environment panel reports which are missing. perf is optional for profiling, rr for replay. Contributions are welcome on the deterministic layer; read the non-goals first. Dual-licensed under Apache-2.0 or MIT, at your option.</p>
+  </footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;\&quot;dark\&quot; | \&quot;light\&quot;&quot;,&quot;section&quot;:&quot;Page&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const t = (k, s) => [k, s];
+    return {
+      theme: this.props.theme === "light" ? "light" : "dark",
+
+      questions: [
+        { icon: "hard-drive", title: "Why is this so big?", where: "Answered in the Size view: treemap, instantiation groups, symbol table.",
+          body: "Attributes every byte to a crate, module, or one instantiation of a generic — then finds the build configuration and source changes that shrink it.",
+          example: "4,282,528 bytes · 41,208 symbols · −32.6% available" },
+        { icon: "flame", title: "Why is this slow?", where: "Answered in the Perf view: inlining-aware flamegraph, hot symbols, attributed source.",
+          body: "Attributes CPU samples back to source constructs through inlining, and says what the compiler actually did rather than what it should have done.",
+          example: "61,480 samples · 31.4% in one inlined compare · IPC 0.39" },
+        { icon: "bug", title: "Why did this crash?", where: "Answered in the Failure view: stack, source, disassembly, reconstructed locals.",
+          body: "Takes a core dump from an optimized build and reconstructs the faulting line, the local values, and the root cause — including variables the debugger reports as optimized out.",
+          example: "6 frames, 2 inlined · label.len = 64 recovered from r12" },
+      ],
+
+      artifactLines: [
+        [t("punct", "{")],
+        [t("plain", "  "), t("ty", "\"artifact\""), t("punct", ": "), t("str", "\"binmap.json\""), t("punct", ",")],
+        [t("plain", "  "), t("ty", "\"version\""), t("punct", ": "), t("str", "\"0.4.1\""), t("punct", ",")],
+        [t("plain", "  "), t("ty", "\"project\""), t("punct", ": { "), t("ty", "\"name\""), t("punct", ": "), t("str", "\"acme-platform\""), t("punct", ", "), t("ty", "\"commit\""), t("punct", ": "), t("str", "\"4c81ef0\""), t("punct", ", "), t("ty", "\"dirty\""), t("punct", ": "), t("kw", "true"), t("punct", " },")],
+        [t("plain", "  "), t("ty", "\"target\""), t("punct", ":  { "), t("ty", "\"id\""), t("punct", ": "), t("str", "\"syd-gateway\""), t("punct", ", "), t("ty", "\"kind\""), t("punct", ": "), t("str", "\"rust/bin\""), t("punct", ", "), t("ty", "\"bytes\""), t("punct", ": "), t("num", "4282528"), t("punct", " },")],
+        [t("plain", "  "), t("ty", "\"reasoner\""), t("punct", ": "), t("kw", "null"), t("punct", ","), t("plain", "        "), t("cm", "// no reasoner connected in this session")],
+        [t("plain", "  "), t("ty", "\"findings\""), t("punct", ": [")],
+        [t("plain", "    "), t("punct", "{")],
+        [t("plain", "      "), t("ty", "\"id\""), t("punct", ": "), t("str", "\"f1\""), t("punct", ", "), t("ty", "\"kind\""), t("punct", ": "), t("str", "\"MonomorphizationBloat\""), t("punct", ",")],
+        [t("plain", "      "), t("ty", "\"title\""), t("punct", ": "), t("str", "\"Router::dispatch monomorphized 14 times\""), t("punct", ",")],
+        [t("plain", "      "), t("ty", "\"location\""), t("punct", ": "), t("str", "\"syd-route/src/router.rs:118\""), t("punct", ",")],
+        [t("plain", "      "), t("ty", "\"impact_bytes\""), t("punct", ": "), t("num", "-238592"), t("punct", ", "), t("ty", "\"confidence\""), t("punct", ": "), t("str", "\"high\""), t("punct", ",")],
+        [t("plain", "      "), t("ty", "\"provenance\""), t("punct", ": "), t("str", "\"derived\""), t("punct", ",")],
+        [t("plain", "      "), t("ty", "\"evidence\""), t("punct", ": [")],
+        [t("plain", "        { "), t("ty", "\"kind\""), t("punct", ": "), t("str", "\"measured\""), t("punct", ", "), t("ty", "\"tool\""), t("punct", ": "), t("str", "\"bloaty 1.1.0\""), t("punct", ", "), t("ty", "\"digest\""), t("punct", ": "), t("str", "\"a3f9c2…8e4d\""), t("punct", " },")],
+        [t("plain", "        { "), t("ty", "\"kind\""), t("punct", ": "), t("str", "\"measured\""), t("punct", ", "), t("ty", "\"tool\""), t("punct", ": "), t("str", "\"binmap-core 0.4.1\""), t("punct", ", "), t("ty", "\"digest\""), t("punct", ": "), t("str", "\"7c41e0…8a2f\""), t("punct", " },")],
+        [t("plain", "        { "), t("ty", "\"kind\""), t("punct", ": "), t("str", "\"measured\""), t("punct", ", "), t("ty", "\"tool\""), t("punct", ": "), t("str", "\"perf 6.9\""), t("punct", ", "), t("ty", "\"samples\""), t("punct", ": "), t("num", "19320"), t("punct", " },")],
+        [t("plain", "        { "), t("ty", "\"kind\""), t("punct", ": "), t("str", "\"derived\""), t("punct", ",  "), t("ty", "\"rule\""), t("punct", ": "), t("str", "\"mono_collapse_candidate\""), t("punct", " }")],
+        [t("plain", "      "), t("punct", "],")],
+        [t("plain", "      "), t("ty", "\"proposal\""), t("punct", ": { "), t("ty", "\"requires_tier\""), t("punct", ": "), t("str", "\"autonomous\""), t("punct", ", "), t("ty", "\"applied\""), t("punct", ": "), t("kw", "false"), t("punct", " }")],
+        [t("plain", "    "), t("punct", "}")],
+        [t("plain", "  "), t("punct", "],")],
+        [t("plain", "  "), t("ty", "\"gates\""), t("punct", ": { "), t("ty", "\"admitted\""), t("punct", ": "), t("num", "4"), t("punct", ", "), t("ty", "\"rejected\""), t("punct", ": "), t("num", "1"), t("punct", " },")],
+        [t("plain", "  "), t("ty", "\"redaction\""), t("punct", ": "), t("str", "\"applied\""), t("plain", "     "), t("cm", "// absolute paths and env values removed")],
+        [t("punct", "}")],
+      ],
+
+      provenance: [
+        { glyph: "●", color: "var(--status-pass)", word: "Measured", tool: "bloaty · perf · hyperfine · gimli",
+          body: "A tool ran and produced this number. The command and its arguments are recorded, with a content digest of the output." },
+        { glyph: "◈", color: "var(--text-secondary)", word: "Derived", tool: "rule: mono_collapse_candidate",
+          body: "One of Binmap's own rules reached this conclusion from measured inputs. The rule is named, and its inputs are listed." },
+        { glyph: "◆", color: "var(--text-accent)", word: "Inferred", tool: "capped at Probable · cites its evidence",
+          body: "A model said so. It may only reference evidence the engine issued this session, and a claim that cites anything else is rejected at the gate." },
+      ],
+
+      tiers: [
+        { n: "1", name: "Observe", body: "Measures and explains. Read-only.", isDefault: false },
+        { n: "2", name: "Propose", body: "Generates diffs. Never applies them.", isDefault: true },
+        { n: "3", name: "Tune", body: "Writes build configuration only, after tests pass and the benchmark confirms.", isDefault: false },
+        { n: "4", name: "Autonomous", body: "Applies source patches and opens a pull request. Explicit opt-in.", isDefault: false },
+      ],
+
+      targets: [
+        { icon: "cog", name: "Rust", phase: "phase 0–4", artifact: "native ELF + DWARF",
+          has: ["Byte attribution to crates, modules and instantiations", "Build sweep over opt-level, lto, panic and strip", "Core dumps, with values recovered from registers", "perf sampling and rr replay"], hasnt: [] },
+        { icon: "box", name: ".NET", phase: "phase 2.5", artifact: "NativeAOT ELF · or managed assemblies",
+          has: ["Size from the ILC .mstat accounting", "Trim reasons from the .dgml dependency graph", "Managed dumps through the .NET bridge", "EventPipe traces"], hasnt: ["No replay", "No core dump for a JIT deployment"] },
+        { icon: "globe", name: "Web", phase: "phase 2.5", artifact: "bundle + source maps",
+          has: ["Raw, gzip and brotli side by side", "Bundler sweep including browserslist", "V8 profiles mapped back to TypeScript", "Minified stacks resolved through the map"], hasnt: ["No disassembly: there is no machine-code layer", "No core dump, no replay"] },
+      ],
+
+      nonGoals: [
+        { id: "N1", title: "Not an IDE.", body: "No editing, no LSP, no build-on-save. It reads your code; you edit elsewhere." },
+        { id: "N2", title: "Not a source-only linter.", body: "If Clippy can find it, Binmap does not try." },
+        { id: "N3", title: "Not cross-platform in v1.", body: "Linux x86-64 only. rr is Linux-x86-64-only and that constraint propagates." },
+        { id: "N4", title: "Not a replacement for GDB or LLDB.", body: "No general-purpose interactive stepping UI. Binmap drives debuggers; it is not one." },
+        { id: "N5", title: "Not a hosted service.", body: "No accounts, no server, no telemetry — and any future change requires opt-in." },
+        { id: "N7", title: "No autonomous commits.", body: "Not without the trust tier explicitly raised, and never as the default." },
+      ],
+
+      phases: [
+        { n: "0", name: "Config autotuner", weeks: "5–7 weeks", state: "in progress", tone: "info",
+          body: "The build-profile search space, measured on your crate." },
+        { n: "1", name: "Size attribution", weeks: "6–9 weeks", state: "planned", tone: "neutral",
+          body: "Where the bytes went, and monomorphization grouping." },
+        { n: "2", name: "Crash analysis", weeks: "7–10 weeks", state: "planned", tone: "neutral",
+          body: "Core dumps, inline frames, values the debugger gives up on." },
+        { n: "3", name: "Performance attribution", weeks: "5–7 weeks", state: "planned", tone: "neutral",
+          body: "Samples to source constructs, depends on phase 2 symbolization." },
+        { n: "4", name: "Replay debugging", weeks: "open-ended", state: "not started", tone: "neutral",
+          body: "rr traces, reverse execution, watchpoints. The original vision." },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

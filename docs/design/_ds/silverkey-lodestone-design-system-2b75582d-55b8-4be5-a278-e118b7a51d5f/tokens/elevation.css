@@ -1,0 +1,17 @@
+:root{
+  /* Dark-theme elevation is carried by surface value + a hairline, not blur.
+     Shadows appear only on things that genuinely float. */
+  --shadow-none:none;
+  --shadow-raised:0 1px 2px rgba(0,0,0,.40);
+  --shadow-panel:0 2px 8px rgba(0,0,0,.35);
+  --shadow-overlay:0 12px 32px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.40);
+  --shadow-inset-top:inset 0 1px 0 rgba(255,255,255,.04);
+
+  --glow-accent:0 0 0 1px rgba(255,111,21,.45),0 0 12px rgba(255,111,21,.18); /* @kind shadow */
+  --glow-danger:0 0 0 1px rgba(229,86,91,.45); /* @kind shadow */
+
+  /* Protection gradients: for canvas views that scroll under chrome. */
+  --scrim-top:linear-gradient(to bottom,rgba(14,17,22,.92),rgba(14,17,22,0)); /* @kind other */
+  --scrim-bottom:linear-gradient(to top,rgba(14,17,22,.92),rgba(14,17,22,0)); /* @kind other */
+  --blur-overlay:blur(2px) saturate(.9); /* @kind other */
+}

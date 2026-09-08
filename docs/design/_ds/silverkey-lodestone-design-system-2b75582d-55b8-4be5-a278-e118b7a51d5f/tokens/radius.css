@@ -1,0 +1,14 @@
+:root{
+  --radius-0:0px;
+  --radius-2:2px;    /* provenance markers, inline chips */
+  --radius-3:3px;    /* inputs, table selection */
+  --radius-5:5px;    /* buttons, tags — the default control radius */
+  --radius-8:8px;    /* panels, cards, dialogs */
+  --radius-12:12px;  /* dialog + palette shells */
+  --radius-full:999px;
+
+  --border-1:1px; /* @kind spacing */
+  --border-2:2px; /* @kind spacing */
+  --focus-ring-w:2px; /* @kind spacing */
+  --focus-ring-offset:1px; /* @kind spacing */
+}

@@ -1,0 +1,63 @@
+/* Base palette. Both ramps are sampled from the SilverKey mark:
+   slate #3D4658 (wordmark + "S") and orange #FF6F15 (the "K" chevron). */
+:root{
+  /* Slate — the neutral spine of the brand. Hue held at ~222. */
+  --slate-950:#0E1116;
+  --slate-900:#14181F;
+  --slate-850:#1A1F27;
+  --slate-800:#222834;
+  --slate-750:#282F3C;
+  --slate-700:#2F3745;
+  --slate-650:#363F4F;
+  --slate-600:#3D4658; /* BRAND SLATE — logo wordmark */
+  --slate-500:#4E596F;
+  --slate-400:#6E7891;
+  --slate-350:#828CA3;
+  --slate-300:#98A0B3;
+  --slate-200:#C2C8D4;
+  --slate-100:#E1E5EC;
+  --slate-050:#F2F4F7;
+  --white:#FFFFFF;
+
+  /* Orange — the accent. Used sparingly and always with intent. */
+  --orange-800:#7A3105;
+  --orange-700:#B24A08;
+  --orange-600:#D95C0C;
+  --orange-500:#FF6F15; /* BRAND ORANGE — logo chevron */
+  --orange-400:#FF8A42;
+  --orange-300:#FFA870;
+  --orange-200:#FFC9A3;
+  --orange-100:#FFE7D6;
+  --orange-050:#FFF4EC;
+
+  /* Semantic hues, desaturated to sit beside slate without shouting. */
+  --green-600:#2E8C69;
+  --green-500:#46C08D;
+  --green-300:#8ADCBB;
+  --green-tint:#12251E;
+
+  --red-600:#B33C41;
+  --red-500:#E5565B;
+  --red-300:#F09499;
+  --red-tint:#2A1417;
+
+  --amber-600:#B3801F;
+  --amber-500:#E5A93C;
+  --amber-300:#F2CD8A;
+  --amber-tint:#291F0F;
+
+  --blue-600:#3F6D96;
+  --blue-500:#5B8FB9;
+  --blue-300:#9CC0DA;
+  --blue-tint:#111C26;
+
+  /* Categorical palette — treemap regions, flamegraph groups, sweep series. */
+  --cat-yours:#FF6F15;
+  --cat-deps:#5B8FB9;
+  --cat-fmt:#46C08D;
+  --cat-panic:#E5565B;
+  --cat-unwind:#A98BD1;
+  --cat-drop:#E5A93C;
+  --cat-vtable:#5FBFB4;
+  --cat-static:#8E9AB5;
+}

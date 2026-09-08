@@ -1,0 +1,80 @@
+/* Light theme (PRD U11: "Dark theme default; light theme available").
+   Applied by setting data-theme="light" on any ancestor. */
+[data-theme="light"]{
+  --surface-app:var(--slate-050);
+  --surface-panel:var(--white);
+  --surface-raised:var(--white);
+  --surface-sunken:var(--slate-100);
+  --surface-input:var(--white);
+  --surface-hover:var(--slate-050);
+  --surface-active:var(--slate-100);
+  --surface-selected:var(--orange-050);
+  --surface-canvas:var(--white);
+  --surface-overlay:var(--white);
+  --surface-scrim:rgba(61,70,88,.28);
+  --surface-code:var(--slate-050);
+
+  --text-primary:var(--slate-900);
+  --text-body:var(--slate-600);
+  --text-secondary:var(--slate-500);
+  --text-muted:var(--slate-400);
+  --text-disabled:var(--slate-300);
+  --text-inverse:var(--white);
+  --text-accent:var(--orange-700);
+  --text-link:var(--orange-700);
+  --text-link-hover:var(--orange-600);
+
+  --border-subtle:var(--slate-100);
+  --border-default:var(--slate-200);
+  --border-strong:var(--slate-300);
+  --divider:var(--slate-100);
+
+  --accent-quiet:rgba(255,111,21,.10);
+  --accent-quiet-hover:rgba(255,111,21,.16);
+  --on-accent:var(--white);
+
+  --status-pass:var(--green-600);
+  --status-pass-bg:#E6F5EE;
+  --status-fail:var(--red-600);
+  --status-fail-bg:#FBEBEC;
+  --status-warn:var(--amber-600);
+  --status-warn-bg:#FBF2E0;
+  --status-info:var(--blue-600);
+  --status-info-bg:#EAF1F7;
+
+  --prov-measured:var(--green-600);
+  --prov-measured-bg:#E6F5EE;
+  --prov-derived:var(--slate-500);
+  --prov-derived-bg:var(--slate-050);
+  --prov-inferred:var(--orange-700);
+  --prov-inferred-bg:var(--orange-050);
+
+  --confidence-certain:var(--green-600);
+  --confidence-high:var(--green-600);
+  --confidence-probable:var(--orange-700);
+  --confidence-speculative:var(--orange-600);
+
+  --delta-improve:var(--green-600);
+  --delta-regress:var(--red-600);
+
+  --shadow-raised:0 1px 2px rgba(61,70,88,.10);
+  --shadow-panel:0 1px 3px rgba(61,70,88,.10),0 4px 12px rgba(61,70,88,.06);
+  --shadow-overlay:0 12px 32px rgba(61,70,88,.18),0 2px 6px rgba(61,70,88,.10);
+  --scrim-top:linear-gradient(to bottom,rgba(255,255,255,.94),rgba(255,255,255,0)); /* @kind other */
+  --scrim-bottom:linear-gradient(to top,rgba(255,255,255,.94),rgba(255,255,255,0)); /* @kind other */
+
+  --syn-plain:var(--slate-800);
+  --syn-comment:var(--slate-400);
+  --syn-keyword:#A9701A;
+  --syn-type:#2C7D74;
+  --syn-string:#2E8C69;
+  --syn-number:#B24A08;
+  --syn-fn:#3F6D96;
+  --syn-macro:#7A5AA3;
+  --syn-punct:var(--slate-400);
+  --syn-mnemonic:#3F6D96;
+  --syn-register:#A9701A;
+  --syn-addr:var(--slate-400);
+  --syn-line-highlight:rgba(255,111,21,.08);
+  --syn-gutter:var(--slate-300);
+}

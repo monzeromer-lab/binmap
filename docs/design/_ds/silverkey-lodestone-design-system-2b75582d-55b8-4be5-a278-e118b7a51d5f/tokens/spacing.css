@@ -1,0 +1,32 @@
+:root{
+  /* 4px base grid. 2px exists for icon/label kerning only. */
+  --space-0:0px;
+  --space-2:2px;
+  --space-4:4px;
+  --space-6:6px;
+  --space-8:8px;
+  --space-10:10px;
+  --space-12:12px;
+  --space-16:16px;
+  --space-20:20px;
+  --space-24:24px;
+  --space-32:32px;
+  --space-40:40px;
+  --space-56:56px;
+  --space-72:72px;
+
+  /* Application chrome — fixed dimensions of the Lodestone frame. */
+  --chrome-titlebar-h:40px;
+  --chrome-statusbar-h:28px;
+  --chrome-navrail-w:72px;
+  --chrome-inspector-w:340px;
+  --chrome-gutter:12px;
+
+  /* Control sizing */
+  --control-h-sm:24px;
+  --control-h-md:30px;
+  --control-h-lg:36px;
+  --control-pad-x:12px;
+  --row-h:28px;      /* dense data table row */
+  --row-h-lg:34px;
+}

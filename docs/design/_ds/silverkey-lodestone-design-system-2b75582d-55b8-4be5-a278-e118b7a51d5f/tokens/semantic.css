@@ -1,0 +1,100 @@
+/* Semantic aliases. Dark theme is the default (PRD U11). */
+:root{
+  /* Surfaces */
+  --surface-app:var(--slate-950);
+  --surface-panel:var(--slate-900);
+  --surface-raised:var(--slate-850);
+  --surface-sunken:#0A0D11;
+  --surface-input:var(--slate-850);
+  --surface-hover:var(--slate-800);
+  --surface-active:var(--slate-750);
+  --surface-selected:#1E2733;
+  --surface-canvas:#0B0E13;
+  --surface-overlay:var(--slate-850);
+  --surface-scrim:rgba(8,10,14,.68);
+  --surface-code:#0C0F14;
+
+  /* Text */
+  --text-primary:var(--slate-050);
+  --text-body:var(--slate-200);
+  --text-secondary:var(--slate-300);
+  --text-muted:var(--slate-400);
+  --text-disabled:var(--slate-500);
+  --text-inverse:var(--slate-950);
+  --text-accent:var(--orange-400);
+  --text-link:var(--orange-400);
+  --text-link-hover:var(--orange-300);
+
+  /* Borders */
+  --border-subtle:var(--slate-800);
+  --border-default:var(--slate-700);
+  --border-strong:var(--slate-600);
+  --border-accent:var(--orange-500);
+  --divider:var(--slate-800);
+
+  /* Accent / actions */
+  --accent:var(--orange-500);
+  --accent-hover:var(--orange-400);
+  --accent-press:var(--orange-600);
+  --accent-quiet:rgba(255,111,21,.14);
+  --accent-quiet-hover:rgba(255,111,21,.22);
+  --on-accent:#1A0C02;
+  --focus-ring:var(--orange-400);
+
+  /* Status */
+  --status-pass:var(--green-500);
+  --status-pass-bg:var(--green-tint);
+  --status-fail:var(--red-500);
+  --status-fail-bg:var(--red-tint);
+  --status-warn:var(--amber-500);
+  --status-warn-bg:var(--amber-tint);
+  --status-info:var(--blue-500);
+  --status-info-bg:var(--blue-tint);
+  --status-neutral:var(--slate-400);
+  --status-running:var(--orange-400);
+
+  /* Provenance — DESIGN §7.1. The most load-bearing colour decision here. */
+  --prov-measured:var(--green-500);
+  --prov-measured-bg:var(--green-tint);
+  --prov-derived:var(--slate-300);
+  --prov-derived-bg:var(--slate-800);
+  --prov-inferred:var(--orange-500);
+  --prov-inferred-bg:rgba(255,111,21,.12);
+
+  /* Confidence — Certain/High read as measurement, Probable/Speculative as claim. */
+  --confidence-certain:var(--green-500);
+  --confidence-high:var(--green-300);
+  --confidence-probable:var(--orange-400);
+  --confidence-speculative:var(--orange-200);
+
+  /* Metric deltas */
+  --delta-improve:var(--green-500);
+  --delta-regress:var(--red-500);
+  --delta-flat:var(--slate-400);
+
+  /* Diff overlays: growth warm, shrinkage cool (DESIGN §7.2) */
+  --diff-grew:var(--red-500);
+  --diff-shrank:var(--blue-500);
+
+  /* Trust tiers */
+  --tier-observe:var(--slate-300);
+  --tier-propose:var(--blue-500);
+  --tier-tune:var(--amber-500);
+  --tier-autonomous:var(--red-500);
+
+  /* Syntax — source and annotated disassembly panes */
+  --syn-plain:var(--slate-200);
+  --syn-comment:var(--slate-500);
+  --syn-keyword:#E5A93C;
+  --syn-type:#5FBFB4;
+  --syn-string:#8ADCBB;
+  --syn-number:#FFA870;
+  --syn-fn:#9CC0DA;
+  --syn-macro:#A98BD1;
+  --syn-punct:var(--slate-400);
+  --syn-mnemonic:#9CC0DA;
+  --syn-register:#E5A93C;
+  --syn-addr:var(--slate-500);
+  --syn-line-highlight:rgba(255,111,21,.10);
+  --syn-gutter:var(--slate-600);
+}
