@@ -45,6 +45,7 @@ name = "binmap-measure"
 version = "0.1.0"
 dependencies = [
  "binmap-core",
+ "binmap-verify",
  "serde",
  "serde_json",
 ]

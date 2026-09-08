@@ -1,5 +1,6 @@
 [package]
 name = "binmap-measure"
+description = "Size, timing, the noise floor, statistical significance and the Pareto frontier"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,5 +9,6 @@ repository.workspace = true
 
 [dependencies]
 binmap-core = { workspace = true }
+binmap-verify = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
