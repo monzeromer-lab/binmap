@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/binmap",
     "crates/binmap-core",
     "crates/binmap-verify",
     "crates/binmap-build",
@@ -29,6 +30,7 @@ binmap-verify = { path = "crates/binmap-verify" }
 binmap-build = { path = "crates/binmap-build" }
 binmap-measure = { path = "crates/binmap-measure" }
 binmap-session = { path = "crates/binmap-session" }
+binmap-gui = { path = "crates/binmap-gui" }
 
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"

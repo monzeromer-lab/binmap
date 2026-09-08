@@ -19,7 +19,7 @@ fn engine() -> BinmapEngine {
 fn opening_a_project_enumerates_its_targets_up_front() {
     let engine = engine();
     let targets = engine.targets().unwrap();
-    assert!(targets.iter().any(|t| t.id == "binmap-gui::binmap"), "{targets:?}");
+    assert!(targets.iter().any(|t| t.id == "binmap::binmap"), "{targets:?}");
     // Every one states what it can do, in the words the project view uses.
     assert!(targets.iter().all(|t| !t.capabilities.is_empty()));
 }
@@ -114,7 +114,7 @@ fn evidence_for_a_finding_that_does_not_exist_is_empty_rather_than_a_panic() {
 fn a_run_adopted_from_a_previous_session_can_be_resumed() {
     let engine = engine();
     let run = RunId("run-0001".into());
-    let state = SweepState::new(run.clone(), "binmap-gui::binmap", Vec::new());
+    let state = SweepState::new(run.clone(), "binmap::binmap", Vec::new());
     engine.adopt_run(state);
 
     assert!(engine.run_state(&run).is_some());

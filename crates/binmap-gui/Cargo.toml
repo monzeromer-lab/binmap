@@ -1,17 +1,20 @@
 [package]
 name = "binmap-gui"
-description = "The GPUI application. The only product surface."
+description = "The interface. Depends on binmap-core and binmap-session only, so it cannot call an analysis."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "binmap"
-path = "src/main.rs"
+[lib]
+name = "binmap_gui"
+path = "src/lib.rs"
 
 [dependencies]
+# Deliberately short, and enforced by review: no binmap-build, no
+# binmap-measure, no binmap-verify. The interface reaches analyses through
+# binmap_core::facade::Engine and cannot reach them any other way (§2.4).
 binmap-core = { workspace = true }
 binmap-session = { workspace = true }
 serde = { workspace = true }

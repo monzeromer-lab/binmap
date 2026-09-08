@@ -1,0 +1,19 @@
+[package]
+name = "binmap"
+description = "The Binmap application. Wires an engine to the interface and owns nothing else."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "binmap"
+path = "src/main.rs"
+
+[dependencies]
+binmap-core = { workspace = true }
+binmap-build = { workspace = true }
+binmap-gui = { workspace = true }
+binmap-session = { workspace = true }
+binmap-verify = { workspace = true }

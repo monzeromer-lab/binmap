@@ -3,6 +3,17 @@
 version = 4
 
 [[package]]
+name = "binmap"
+version = "0.1.0"
+dependencies = [
+ "binmap-build",
+ "binmap-core",
+ "binmap-gui",
+ "binmap-session",
+ "binmap-verify",
+]
+
+[[package]]
 name = "binmap-build"
 version = "0.1.0"
 dependencies = [

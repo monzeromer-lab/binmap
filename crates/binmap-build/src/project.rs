@@ -166,7 +166,7 @@ mod tests {
         }
 
         let ids: Vec<&str> = targets.iter().map(|t| t.id.as_str()).collect();
-        assert!(ids.contains(&"binmap-gui::binmap"), "{ids:?}");
+        assert!(ids.contains(&"binmap::binmap"), "{ids:?}");
         // Test and bench targets are not what ships, so they are not offered.
         assert!(!ids.iter().any(|id| id.contains("::tests")), "{ids:?}");
         // The discovery itself is on the record.
