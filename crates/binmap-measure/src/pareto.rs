@@ -9,9 +9,11 @@ use serde::{Deserialize, Serialize};
 
 /// One measured configuration, as a point in the objective space.
 ///
-/// Every objective is minimized. `runtime_nanos` is `None` when no benchmark
-/// was declared — which is different from zero, and the dominance rule treats
-/// it as different.
+/// Every objective is minimized, and every optional one is `None` when it was
+/// not measured rather than zero. `runtime_nanos` is absent when no benchmark
+/// was declared; `build_time_nanos` is absent when the sweep ran builds
+/// concurrently, which makes each build's wall-clock time a measurement of the
+/// machine's load rather than of the configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Point {
     /// The configuration's stable name.
@@ -19,7 +21,8 @@ pub struct Point {
     pub size_bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_nanos: Option<u64>,
-    pub build_time_nanos: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_time_nanos: Option<u64>,
     /// A candidate that did not build or did not pass its tests is not
     /// eligible for the frontier, but it stays in the table — a near miss is
     /// informative.
@@ -27,18 +30,23 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn new(configuration: impl Into<String>, size_bytes: u64, build_time_nanos: u64) -> Self {
+    pub fn new(configuration: impl Into<String>, size_bytes: u64) -> Self {
         Self {
             configuration: configuration.into(),
             size_bytes,
             runtime_nanos: None,
-            build_time_nanos,
+            build_time_nanos: None,
             eligible: true,
         }
     }
 
     pub fn with_runtime(mut self, runtime_nanos: u64) -> Self {
         self.runtime_nanos = Some(runtime_nanos);
+        self
+    }
+
+    pub fn with_build_time(mut self, build_time_nanos: u64) -> Self {
+        self.build_time_nanos = Some(build_time_nanos);
         self
     }
 
@@ -73,21 +81,23 @@ impl Point {
         if !compare(self.size_bytes, other.size_bytes) {
             return false;
         }
-        if !compare(self.build_time_nanos, other.build_time_nanos) {
-            return false;
-        }
-        match (self.runtime_nanos, other.runtime_nanos) {
-            (Some(mine), Some(theirs)) => {
-                if !compare(mine, theirs) {
-                    return false;
+        for (mine, theirs) in [
+            (self.runtime_nanos, other.runtime_nanos),
+            (self.build_time_nanos, other.build_time_nanos),
+        ] {
+            match (mine, theirs) {
+                (Some(mine), Some(theirs)) => {
+                    if !compare(mine, theirs) {
+                        return false;
+                    }
                 }
+                // They measured this axis and we did not: our standing on it is
+                // unknown, so we cannot claim to be at least as good on it.
+                (None, Some(_)) => return false,
+                // We measured it and they did not; the axis is simply not part
+                // of the comparison.
+                (Some(_), None) | (None, None) => {}
             }
-            // They measured runtime and we did not: our standing on that axis
-            // is unknown, so we cannot claim to be at least as good on it.
-            (None, Some(_)) => return false,
-            // We measured it and they did not; the axis simply is not part of
-            // the comparison.
-            (Some(_), None) | (None, None) => {}
         }
 
         strictly_better_somewhere
@@ -122,7 +132,7 @@ mod tests {
     use super::*;
 
     fn point(name: &str, size: u64, build: u64) -> Point {
-        Point::new(name, size, build)
+        Point::new(name, size).with_build_time(build)
     }
 
     #[test]
@@ -188,5 +198,17 @@ mod tests {
     #[test]
     fn an_empty_sweep_has_an_empty_frontier() {
         assert!(frontier(&[]).is_empty());
+    }
+
+    #[test]
+    fn build_times_dropped_by_a_parallel_sweep_do_not_become_free_wins() {
+        // A sweep that built concurrently cannot compare wall-clock build
+        // times, so it records none. Such a point must not then dominate one
+        // that measured a build time.
+        let timed = point("serial", 100, 900);
+        let untimed = Point::new("parallel", 100);
+        assert!(!untimed.dominates(&timed));
+        assert!(!timed.dominates(&untimed));
+        assert_eq!(frontier(&[timed, untimed]), vec![0, 1]);
     }
 }

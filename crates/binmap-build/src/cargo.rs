@@ -1,0 +1,234 @@
+//! Building one configuration with cargo.
+//!
+//! Nothing here edits the user's `Cargo.toml`. A configuration is put into
+//! effect with `--config` arguments and a `RUSTFLAGS` environment, so a sweep
+//! of ninety-six configurations leaves the manifest exactly as it found it.
+
+use binmap_core::configuration::BuildConfiguration;
+use binmap_core::error::{Error, Result};
+use binmap_core::evidence::ToolInvocation;
+use binmap_core::tool::ToolRunner;
+use binmap_core::traits::{BuildOutcome, BuildSystem, Target};
+use serde::Deserialize;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+/// Cargo, driven against one project.
+pub struct CargoBuildSystem {
+    runner: ToolRunner,
+    /// Our own target directory. The user's stays untouched, so the
+    /// incremental cache they will want back the moment the sweep finishes is
+    /// still there.
+    target_directory: PathBuf,
+}
+
+impl CargoBuildSystem {
+    pub fn new(runner: ToolRunner, target_directory: impl Into<PathBuf>) -> Self {
+        Self { runner, target_directory: target_directory.into() }
+    }
+
+    pub fn runner(&self) -> &ToolRunner {
+        &self.runner
+    }
+
+    /// Where this configuration's build products go.
+    ///
+    /// Per configuration, so a resumed sweep finds the builds it already did
+    /// rather than repeating them, and so two configurations never overwrite
+    /// each other's artifact.
+    pub fn target_directory_for(&self, configuration: &BuildConfiguration) -> PathBuf {
+        self.target_directory.join(configuration.name())
+    }
+
+    /// The exact arguments this configuration is built with. Public because
+    /// the Profile Lab shows them beside each point, and a user who wants to
+    /// reproduce a number should be able to retype it.
+    pub fn build_arguments(
+        &self,
+        target: &Target,
+        configuration: &BuildConfiguration,
+    ) -> Vec<String> {
+        let mut arguments = vec!["build".to_string(), "--release".to_string()];
+        arguments.extend(configuration.unstable_args());
+        arguments.push("--package".into());
+        arguments.push(target.package.clone());
+        arguments.push("--target-dir".into());
+        arguments.push(self.target_directory_for(configuration).display().to_string());
+        // JSON on stdout for the artifact paths, rendered diagnostics on
+        // stderr so the Builds gate can count warnings the way a person does.
+        arguments.push("--message-format".into());
+        arguments.push("json-render-diagnostics".into());
+        arguments.extend(configuration.cargo_config_args());
+        arguments
+    }
+
+    fn env_for(&self, configuration: &BuildConfiguration) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        let flags = configuration.rustflags();
+        if !flags.is_empty() {
+            env.insert("RUSTFLAGS".to_string(), flags.join(" "));
+        }
+        env
+    }
+}
+
+/// The compiler-artifact messages cargo emits on stdout, reduced to what we
+/// read.
+#[derive(Debug, Deserialize)]
+struct CargoMessage {
+    reason: String,
+    #[serde(default)]
+    target: Option<MessageTarget>,
+    #[serde(default)]
+    executable: Option<PathBuf>,
+    #[serde(default)]
+    filenames: Vec<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MessageTarget {
+    name: String,
+}
+
+/// Pick the artifact this target produced out of cargo's message stream.
+///
+/// Reading the path from cargo rather than guessing `target/release/<name>`
+/// keeps us correct for libraries, for renamed binaries, and for whatever
+/// cargo does next.
+fn artifact_from_messages(stdout: &str, target_name: &str) -> Option<PathBuf> {
+    let mut found = None;
+    for line in stdout.lines() {
+        let Ok(message) = serde_json::from_str::<CargoMessage>(line) else { continue };
+        if message.reason != "compiler-artifact" {
+            continue;
+        }
+        if message.target.as_ref().is_none_or(|t| t.name != target_name) {
+            continue;
+        }
+        if let Some(executable) = message.executable {
+            found = Some(executable);
+        } else if let Some(first) = message.filenames.into_iter().next() {
+            found = Some(first);
+        }
+    }
+    found
+}
+
+fn count_warnings(stderr: &str) -> usize {
+    stderr.lines().filter(|line| line.trim_start().starts_with("warning:")).count()
+}
+
+impl BuildSystem for CargoBuildSystem {
+    fn targets(&self, root: &Path) -> Result<Vec<Target>> {
+        crate::project::discover(&self.runner, root).map(|(_, targets)| targets)
+    }
+
+    fn build(
+        &self,
+        target: &Target,
+        configuration: &BuildConfiguration,
+    ) -> Result<BuildOutcome> {
+        let arguments = self.build_arguments(target, configuration);
+        let invocation = ToolInvocation::new("cargo", arguments)
+            .in_directory(self.runner.root().display().to_string());
+        let output = self.runner.run_with_env(invocation, &self.env_for(configuration))?;
+
+        let artifact = if output.succeeded() {
+            let found = artifact_from_messages(&output.stdout, &target.name);
+            if found.is_none() {
+                // The build reported success and produced nothing we can find.
+                // Better to say so than to measure a stale artifact from a
+                // previous configuration.
+                return Err(Error::Other(format!(
+                    "cargo reported success for `{}` but named no artifact",
+                    target.name
+                )));
+            }
+            found
+        } else {
+            None
+        };
+
+        Ok(BuildOutcome {
+            configuration: configuration.clone(),
+            artifact,
+            succeeded: output.succeeded(),
+            duration: output.duration,
+            warnings: count_warnings(&output.stderr),
+            evidence: output.evidence,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use binmap_core::capability::Capabilities;
+    use binmap_core::config::{Lto, OptLevel};
+    use binmap_core::evidence::EvidenceStore;
+    use binmap_core::traits::TargetFamily;
+
+    fn system() -> CargoBuildSystem {
+        CargoBuildSystem::new(ToolRunner::new(EvidenceStore::new(), "."), "/tmp/binmap-target")
+    }
+
+    fn target() -> Target {
+        Target {
+            id: "app::app".into(),
+            name: "app".into(),
+            family: TargetFamily::Rust,
+            package: "app".into(),
+            manifest: "Cargo.toml".into(),
+            capabilities: Capabilities::none(),
+        }
+    }
+
+    #[test]
+    fn a_sweep_never_touches_the_users_target_directory() {
+        let system = system();
+        let arguments = system.build_arguments(&target(), &BuildConfiguration::default_release());
+        let index = arguments.iter().position(|a| a == "--target-dir").expect("always passed");
+        assert!(arguments[index + 1].starts_with("/tmp/binmap-target"));
+    }
+
+    #[test]
+    fn each_configuration_builds_into_its_own_directory_so_a_resume_finds_it() {
+        let system = system();
+        let small = BuildConfiguration { opt_level: Some(OptLevel::Size), ..Default::default() };
+        let fat = BuildConfiguration { lto: Some(Lto::Fat), ..Default::default() };
+        assert_ne!(
+            system.target_directory_for(&small),
+            system.target_directory_for(&fat)
+        );
+    }
+
+    #[test]
+    fn the_configuration_reaches_cargo_as_arguments_not_as_a_manifest_edit() {
+        let system = system();
+        let configuration =
+            BuildConfiguration { opt_level: Some(OptLevel::Size), ..Default::default() };
+        let arguments = system.build_arguments(&target(), &configuration);
+        assert!(arguments.contains(&"profile.release.opt-level=\"s\"".to_string()));
+        assert!(!arguments.iter().any(|a| a.contains("Cargo.toml")));
+    }
+
+    #[test]
+    fn the_artifact_path_comes_from_cargo_rather_than_from_a_guess() {
+        let stdout = concat!(
+            r#"{"reason":"compiler-artifact","target":{"name":"other"},"executable":"/x/other"}"#,
+            "\n",
+            r#"{"reason":"compiler-artifact","target":{"name":"app"},"executable":"/x/app"}"#,
+            "\n",
+            r#"{"reason":"build-finished","success":true}"#,
+        );
+        assert_eq!(artifact_from_messages(stdout, "app"), Some(PathBuf::from("/x/app")));
+        assert_eq!(artifact_from_messages(stdout, "absent"), None);
+    }
+
+    #[test]
+    fn a_library_is_found_through_its_filenames_since_it_has_no_executable() {
+        let stdout =
+            r#"{"reason":"compiler-artifact","target":{"name":"lib"},"filenames":["/x/liblib.rlib"]}"#;
+        assert_eq!(artifact_from_messages(stdout, "lib"), Some(PathBuf::from("/x/liblib.rlib")));
+    }
+}

@@ -7,6 +7,8 @@ name = "binmap-build"
 version = "0.1.0"
 dependencies = [
  "binmap-core",
+ "binmap-measure",
+ "binmap-verify",
  "serde",
  "serde_json",
 ]

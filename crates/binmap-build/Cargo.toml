@@ -1,5 +1,6 @@
 [package]
 name = "binmap-build"
+description = "Cargo integration, the profile matrix, build orchestration and caching"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,5 +9,7 @@ repository.workspace = true
 
 [dependencies]
 binmap-core = { workspace = true }
+binmap-measure = { workspace = true }
+binmap-verify = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
