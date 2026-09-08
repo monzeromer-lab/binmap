@@ -33,23 +33,19 @@ pub fn with_release_profile(manifest: &str, configuration: &BuildConfiguration) 
         return manifest.to_string();
     };
 
-    let profile = document
-        .entry("profile")
-        .or_insert(Item::Table(Default::default()))
-        .as_table_mut()
-        .map(|table| {
-            // `[profile.release]`, not `profile = { release = { … } }`.
-            table.set_implicit(true);
-            table
-        })
-        .and_then(|table| {
-            table
-                .entry("release")
-                .or_insert(Item::Table(Default::default()))
-                .as_table_mut()
-        });
+    let Some(profiles) =
+        document.entry("profile").or_insert(Item::Table(Default::default())).as_table_mut()
+    else {
+        // `profile` exists and is not a table: the manifest is not shaped the
+        // way cargo reads it, and guessing would write something worse.
+        return manifest.to_string();
+    };
+    // `[profile.release]`, not `profile = { release = { … } }`.
+    profiles.set_implicit(true);
 
-    let Some(profile) = profile else {
+    let Some(profile) =
+        profiles.entry("release").or_insert(Item::Table(Default::default())).as_table_mut()
+    else {
         return manifest.to_string();
     };
 

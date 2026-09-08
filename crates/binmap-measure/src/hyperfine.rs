@@ -154,11 +154,21 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_hyperfine_is_reported_rather_than_assumed() {
+    fn a_missing_hyperfine_names_itself_rather_than_failing_obscurely() {
         use binmap_core::evidence::EvidenceStore;
-        let runner = ToolRunner::new(EvidenceStore::new(), ".");
-        // Whatever this machine has, the answer is a fact we checked.
-        let available = is_available(&runner);
-        assert!(available || !available);
+        let store = EvidenceStore::new();
+        let runner = ToolRunner::new(store.clone(), ".");
+        if is_available(&runner) {
+            eprintln!("hyperfine is installed here; the missing-tool path is untested");
+            return;
+        }
+
+        let error = measure(&runner, "true", &[], None, &Timing::default()).unwrap_err();
+        match error {
+            binmap_core::Error::ToolUnavailable { tool, .. } => assert_eq!(tool, "hyperfine"),
+            other => panic!("a missing tool should name itself, got: {other}"),
+        }
+        // And the attempt is on the record, like every other.
+        assert!(!store.is_empty());
     }
 }
