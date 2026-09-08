@@ -13,8 +13,12 @@
 //! Inspector renders, all as plain data that a unit test can drive with
 //! scripted events and no window.
 
+pub mod app;
 pub mod state;
 pub mod theme;
+pub mod views;
+pub mod widgets;
 
 pub use state::{AppState, NavEntry, RunProgress, View};
+pub use app::Binmap;
 pub use theme::{Appearance, Colours, Theme};

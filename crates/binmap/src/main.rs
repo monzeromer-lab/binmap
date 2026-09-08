@@ -11,7 +11,6 @@ use binmap_build::engine::BinmapEngine;
 use binmap_core::config::ProjectConfig;
 use binmap_core::evidence::ToolInvocation;
 use binmap_core::facade::Engine;
-use binmap_gui::AppState;
 use binmap_verify::GatePlan;
 use std::sync::Arc;
 
@@ -39,27 +38,12 @@ fn main() -> std::process::ExitCode {
     // The interface only ever sees this.
     let engine: Arc<dyn Engine> = Arc::new(engine);
 
-    let mut state = AppState::new();
-    state.set_probes(engine.probe_environment());
-    match engine.targets() {
-        Ok(targets) => state.set_targets(targets),
-        Err(error) => eprintln!("binmap: {error}"),
-    }
+    // The project's own name, as the title bar shows it.
+    let project = root
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| root.display().to_string());
 
-    // The window is next: it renders `state` and applies engine events to it.
-    // Until the design is imported there is nothing to render faithfully, so
-    // this reports what it would have opened with rather than guessing at a
-    // layout and building the wrong one.
-    println!("Binmap — {}", root.display());
-    if let Some(target) = state.selected_target() {
-        println!("  {}  {}", target.id, target.capabilities.sentence());
-    }
-    println!(
-        "  {} target(s), {} view(s) in the nav rail, {} probe(s) needing attention",
-        state.targets().len(),
-        state.nav_entries().len(),
-        state.unmet_probes()
-    );
-
+    binmap_gui::app::run(engine, project, Some(root.display().to_string()));
     std::process::ExitCode::SUCCESS
 }
