@@ -743,7 +743,7 @@ fn main() {
             // quits.
             cx.background_executor().timer(Duration::from_secs(12)).await;
             Report::of(&reporting).print();
-            cx.update(|cx| cx.quit()).ok();
+            cx.update(|cx| cx.quit());
         })
         .detach();
     });
