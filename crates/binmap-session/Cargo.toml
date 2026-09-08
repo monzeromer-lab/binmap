@@ -1,5 +1,6 @@
 [package]
 name = "binmap-session"
+description = "The session store, the binmap.json artifact, export with redaction and import"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
