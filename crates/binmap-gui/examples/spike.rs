@@ -97,7 +97,7 @@ impl Report {
         println!("DESIGN-GUI's appendix calls this mandatory. Four questions:\n");
 
         println!("1. A window with a dock layout and two panels");
-        println!("   opened · three panels, an h-split over a v-split\n");
+        println!("   opened · a centre tab group and a bottom dock\n");
 
         println!("2. A DataTable of {} rows", self.table_rows);
         println!("   built in {:?}\n", self.table_built);
@@ -128,6 +128,12 @@ impl Report {
                 paints.len(),
                 over as f64 * 100.0 / paints.len() as f64
             );
+            println!(
+                "   note: every quad here is painted. DESIGN-GUI §6.1 culls anything\n\
+                 \x20        under about 2x2 px into a synthetic \"other\" node, so a real\n\
+                 \x20        treemap paints far fewer than {} at this size.",
+                self.quads
+            );
         }
         if self.hit_tests > 0 {
             println!(
@@ -140,6 +146,16 @@ impl Report {
 
         println!("4. A background task streaming events into a view");
         println!("   {} events applied on the foreground\n", self.events);
+
+        println!("Also found, and worth knowing before Phase 1:");
+        println!(
+            "   A canvas element inside a dock panel never painted on this version.\n\
+             \x20  The panel rendered and the window painted; the element's paint\n\
+             \x20  closure was never called. Outside a dock panel it paints normally,\n\
+             \x20  which is why the canvas here sits beside the dock rather than in it.\n\
+             \x20  The treemap goes in a dock panel, so this needs an answer before\n\
+             \x20  Phase 1 rather than during it.\n"
+        );
     }
 }
 
@@ -306,21 +322,50 @@ struct Cell {
     bounds: Bounds<Pixels>,
 }
 
-/// A uniform grid over the canvas. Not a real spatial index — the point is
-/// that hit testing must not be a linear scan over 20,000 rectangles, and a
-/// grid is enough to prove the shape of the answer.
+/// Where the painted grid actually landed.
+///
+/// Published by prepaint and read by the mouse handler, because the pointer
+/// must be tested against the layout that was painted rather than against one
+/// the panel assumed.
+#[derive(Clone, Copy, Default)]
+struct Geometry {
+    origin: Point<Pixels>,
+    cell: Size<Pixels>,
+    columns: usize,
+}
+
+impl Geometry {
+    /// O(1): compute the cell from the position rather than searching for it.
+    ///
+    /// This is the part that matters. A linear scan over 20,000 rectangles per
+    /// mouse-move is what the treemap must not do, and a uniform grid is
+    /// enough to prove the shape of the answer before squarification makes the
+    /// real one non-uniform.
+    fn at(&self, position: Point<Pixels>) -> Option<usize> {
+        if self.columns == 0 || self.cell.width <= px(0.) || self.cell.height <= px(0.) {
+            return None;
+        }
+        let column = (f32::from(position.x - self.origin.x) / f32::from(self.cell.width)) as usize;
+        let row = (f32::from(position.y - self.origin.y) / f32::from(self.cell.height)) as usize;
+        if column >= self.columns {
+            return None;
+        }
+        let index = row * self.columns + column;
+        (index < QUADS).then_some(index)
+    }
+}
+
+/// A uniform grid over the canvas.
 struct Grid {
     cells: Vec<Cell>,
-    columns: usize,
-    rows: usize,
-    size: Size<Pixels>,
+    geometry: Geometry,
 }
 
 impl Grid {
     fn lay_out(bounds: Bounds<Pixels>) -> Self {
         let columns = (QUADS as f32).sqrt().ceil() as usize;
         let rows = QUADS.div_ceil(columns);
-        let size = size(bounds.size.width / columns as f32, bounds.size.height / rows as f32);
+        let cell = size(bounds.size.width / columns as f32, bounds.size.height / rows as f32);
 
         let cells = (0..QUADS)
             .map(|index| {
@@ -329,27 +374,16 @@ impl Grid {
                     index,
                     bounds: Bounds {
                         origin: point(
-                            bounds.origin.x + size.width * column as f32,
-                            bounds.origin.y + size.height * row as f32,
+                            bounds.origin.x + cell.width * column as f32,
+                            bounds.origin.y + cell.height * row as f32,
                         ),
-                        size,
+                        size: cell,
                     },
                 }
             })
             .collect();
 
-        Self { cells, columns, rows, size }
-    }
-
-    /// O(1): compute the cell from the position rather than searching for it.
-    fn at(&self, position: Point<Pixels>, origin: Point<Pixels>) -> Option<usize> {
-        let column = ((position.x - origin.x) / self.size.width) as usize;
-        let row = ((position.y - origin.y) / self.size.height) as usize;
-        if column >= self.columns || row >= self.rows {
-            return None;
-        }
-        let index = row * self.columns + column;
-        (index < self.cells.len()).then_some(index)
+        Self { cells, geometry: Geometry { origin: bounds.origin, cell, columns } }
     }
 }
 
@@ -357,9 +391,9 @@ struct CanvasPanel {
     focus: FocusHandle,
     hovered: Option<usize>,
     last_paint: Duration,
-    origin: Point<Pixels>,
-    grid_size: Size<Pixels>,
-    columns: usize,
+    /// Where the last painted grid landed, so a pointer is tested against what
+    /// is actually on screen.
+    geometry: Arc<Mutex<Geometry>>,
     shared: Shared,
     hit_tests: usize,
     hit_test_total: Duration,
@@ -371,9 +405,7 @@ impl CanvasPanel {
             focus: cx.focus_handle(),
             hovered: None,
             last_paint: Duration::ZERO,
-            origin: point(px(0.), px(0.)),
-            grid_size: size(px(1.), px(1.)),
-            columns: 1,
+            geometry: Arc::new(Mutex::new(Geometry::default())),
             shared,
             hit_tests: 0,
             hit_test_total: Duration::ZERO,
@@ -413,6 +445,7 @@ impl Render for CanvasPanel {
 
         let prepaint_tally = Arc::clone(&shared);
         let paint_tally = Arc::clone(&shared);
+        let published = Arc::clone(&self.geometry);
 
         div()
             .size_full()
@@ -437,14 +470,9 @@ impl Render for CanvasPanel {
                     .flex_1()
                     .overflow_hidden()
                     .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                        let geometry = *this.geometry.lock().expect("geometry poisoned");
                         let started = Instant::now();
-                        let column =
-                            ((event.position.x - this.origin.x) / this.grid_size.width) as usize;
-                        let row =
-                            ((event.position.y - this.origin.y) / this.grid_size.height) as usize;
-                        let hit = (column < this.columns)
-                            .then(|| row * this.columns + column)
-                            .filter(|index| *index < QUADS);
+                        let hit = geometry.at(event.position);
 
                         this.hit_tests += 1;
                         this.hit_test_total += started.elapsed();
@@ -474,7 +502,12 @@ impl Render for CanvasPanel {
                                 tally.canvas_bounds =
                                     (bounds.size.width.into(), bounds.size.height.into());
                                 drop(tally);
-                                Grid::lay_out(bounds)
+
+                                let grid = Grid::lay_out(bounds);
+                                // Publish where it landed, so the next mouse
+                                // move is tested against this frame.
+                                *published.lock().expect("geometry poisoned") = grid.geometry;
+                                grid
                             },
                             // paint: emit the quads and time the loop.
                             move |_, grid: Grid, window: &mut Window, _: &mut App| {
