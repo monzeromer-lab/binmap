@@ -17,5 +17,9 @@ path = "src/lib.rs"
 # binmap_core::facade::Engine and cannot reach them any other way (§2.4).
 binmap-core = { workspace = true }
 binmap-session = { workspace = true }
+# DESIGN-GUI §7: pinned exact, and the only crate in the workspace that names
+# it. gpui-kit pins the framework and widget versions as a pair, so the
+# application depends on one crate and never on GPUI directly.
+gpui-kit = "=0.6.0"
 serde = { workspace = true }
 serde_json = { workspace = true }

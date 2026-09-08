@@ -9,8 +9,16 @@
 use crate::evidence::EvidenceId;
 use serde::{Deserialize, Serialize};
 
-/// The five gates. Ordered cheapest-first: a candidate that does not build is
-/// not worth timing.
+/// The gates, in the order the Profile Lab lists them.
+///
+/// The plan's §6 table folds the warning diff into `Builds`; the design gives
+/// it its own row, and the design is right: a candidate that builds but adds
+/// warnings the baseline did not have is a different outcome from one that
+/// does not build, and a user reading a rejection deserves to see which.
+///
+/// This is display order. Execution order is cheapest-first — a candidate that
+/// does not build is not worth timing — and the report reorders to this before
+/// anything renders it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Gate {
@@ -18,6 +26,10 @@ pub enum Gate {
     Builds,
     /// The suite passes, using the user's command where declared. Always.
     TestsPass,
+    /// The candidate adds no warning the baseline did not already emit.
+    /// Judged against the baseline, never against zero: a project that starts
+    /// with warnings is not thereby forbidden a smaller binary.
+    NoNewWarnings,
     /// Size measured and recorded, whatever the objective was. Always.
     ///
     /// The pass condition is deliberately "we know what happened to size",
@@ -33,8 +45,21 @@ pub enum Gate {
 }
 
 impl Gate {
-    pub const ALL: [Gate; 5] = [
+    /// Display order, as the Profile Lab lists them.
+    pub const ALL: [Gate; 6] = [
         Gate::Builds,
+        Gate::TestsPass,
+        Gate::NoNewWarnings,
+        Gate::BenchmarkNotWorse,
+        Gate::SizeNotWorse,
+        Gate::MiriClean,
+    ];
+
+    /// Execution order: cheapest first, so an expensive gate never runs for a
+    /// candidate a cheap one has already rejected.
+    pub const IN_COST_ORDER: [Gate; 6] = [
+        Gate::Builds,
+        Gate::NoNewWarnings,
         Gate::TestsPass,
         Gate::SizeNotWorse,
         Gate::BenchmarkNotWorse,
@@ -45,6 +70,7 @@ impl Gate {
         match self {
             Gate::Builds => "Builds",
             Gate::TestsPass => "TestsPass",
+            Gate::NoNewWarnings => "NoNewWarnings",
             Gate::SizeNotWorse => "SizeNotWorse",
             Gate::BenchmarkNotWorse => "BenchmarkNotWorse",
             Gate::MiriClean => "MiriClean",
@@ -56,6 +82,7 @@ impl Gate {
         match self {
             Gate::Builds => "the build succeeds and adds no warnings",
             Gate::TestsPass => "the test suite passes",
+            Gate::NoNewWarnings => "no warning appears that the baseline did not have",
             Gate::SizeNotWorse => "the size change is measured and recorded",
             Gate::BenchmarkNotWorse => "the benchmark does not significantly regress",
             Gate::MiriClean => "sanitizers are clean over the reachable code",
@@ -111,13 +138,25 @@ pub struct GateOutcome {
     /// calls is the case this exists for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caveat: Option<String>,
+    /// What the gate was configured with, rendered beside its name as
+    /// `BenchmarkNotWorse { significance: 0.05 }`. A threshold that decides a
+    /// verdict belongs on screen next to the verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence: Vec<EvidenceId>,
 }
 
 impl GateOutcome {
     pub fn new(gate: Gate, result: GateResult, detail: impl Into<String>) -> Self {
-        Self { gate, result, detail: detail.into(), caveat: None, evidence: Vec::new() }
+        Self {
+            gate,
+            result,
+            detail: detail.into(),
+            caveat: None,
+            parameters: None,
+            evidence: Vec::new(),
+        }
     }
 
     /// A gate that did not apply, carrying the reason as its detail so an
@@ -135,6 +174,21 @@ impl GateOutcome {
     pub fn with_caveat(mut self, caveat: impl Into<String>) -> Self {
         self.caveat = Some(caveat.into());
         self
+    }
+
+    /// Record what the gate was configured with.
+    pub fn configured(mut self, parameters: impl Into<String>) -> Self {
+        self.parameters = Some(parameters.into());
+        self
+    }
+
+    /// The gate's name as the Profile Lab prints it, carrying its
+    /// configuration where it has any.
+    pub fn qualified_label(&self) -> String {
+        match &self.parameters {
+            Some(parameters) => format!("{} {{ {parameters} }}", self.gate.label()),
+            None => self.gate.label().to_string(),
+        }
     }
 }
 
@@ -192,5 +246,16 @@ impl VerificationReport {
 
     pub fn outcome(&self, gate: Gate) -> Option<&GateOutcome> {
         self.outcomes.iter().find(|o| o.gate == gate)
+    }
+
+    /// Put the outcomes into the order the Profile Lab lists them.
+    ///
+    /// They are produced cheapest-first, which is an execution concern; a
+    /// reader wants them in a stable order that does not shuffle depending on
+    /// which gate stopped the run.
+    pub fn in_display_order(&mut self) {
+        self.outcomes.sort_by_key(|outcome| {
+            Gate::ALL.iter().position(|gate| *gate == outcome.gate).unwrap_or(usize::MAX)
+        });
     }
 }

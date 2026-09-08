@@ -24,7 +24,7 @@ fn a_candidate_that_does_not_build_names_the_gate_and_skips_the_rest() {
     assert_eq!(report.summary(), "Rejected by Builds");
 
     // The gates that did not run say so. An absent gate is never a passing one.
-    for gate in [Gate::TestsPass, Gate::SizeNotWorse, Gate::BenchmarkNotWorse, Gate::MiriClean] {
+    for gate in Gate::ALL.into_iter().filter(|gate| *gate != Gate::Builds) {
         let outcome = report.outcome(gate).expect("every gate is reported");
         assert!(
             matches!(outcome.result, GateResult::Skipped { .. }),
@@ -35,20 +35,49 @@ fn a_candidate_that_does_not_build_names_the_gate_and_skips_the_rest() {
 }
 
 #[test]
-fn the_build_gate_judges_warnings_against_the_baseline_not_against_zero() {
+fn warnings_are_their_own_gate_and_are_judged_against_the_baseline() {
+    // The plan's §6 table folds this into Builds; the design gives it its own
+    // row, and the design is right: "it did not build" and "it builds but
+    // complains more than it used to" are different things to tell a user.
     let runner = runner();
     let noisy = "echo 'warning: unused variable: `x`' >&2; echo 'warning: unused import' >&2";
 
-    // Two warnings where the baseline already had two: nothing new, so it passes.
+    // Two warnings where the baseline already had two: nothing new.
     let plan = GatePlan::new(shell(noisy)).against_baseline_warnings(2);
     let report = Harness::new(&runner, plan).verify(&Candidate::new("c").sized(measured(10, 10)));
-    assert!(report.outcome(Gate::Builds).unwrap().result == GateResult::Passed);
+    assert_eq!(report.outcome(Gate::Builds).unwrap().result, GateResult::Passed);
+    assert_eq!(report.outcome(Gate::NoNewWarnings).unwrap().result, GateResult::Passed);
+    assert_eq!(report.outcome(Gate::NoNewWarnings).unwrap().detail, "0 new");
 
     // The same two where the baseline had one: the candidate added a warning.
+    // Builds still passes — it did build.
     let plan = GatePlan::new(shell(noisy)).against_baseline_warnings(1);
     let report = Harness::new(&runner, plan).verify(&Candidate::new("c").sized(measured(10, 10)));
-    assert_eq!(report.rejected_by(), Some(Gate::Builds));
-    assert!(report.outcome(Gate::Builds).unwrap().detail.contains("adds 1 warning"));
+    assert_eq!(report.rejected_by(), Some(Gate::NoNewWarnings));
+    assert_eq!(report.outcome(Gate::Builds).unwrap().result, GateResult::Passed);
+    assert_eq!(report.outcome(Gate::NoNewWarnings).unwrap().detail, "1 new");
+}
+
+#[test]
+fn the_outcomes_come_back_in_the_order_the_profile_lab_lists_them() {
+    // Gates run cheapest-first; a reader wants a stable order that does not
+    // shuffle depending on which gate stopped the run.
+    let runner = runner();
+    let plan = GatePlan::new(shell("true")).testing_with(shell("true"));
+    let report = Harness::new(&runner, plan).verify(&Candidate::new("c").sized(measured(10, 9)));
+
+    let order: Vec<Gate> = report.outcomes.iter().map(|outcome| outcome.gate).collect();
+    assert_eq!(order, Gate::ALL.to_vec());
+}
+
+#[test]
+fn the_benchmark_gate_shows_the_threshold_that_decided_it() {
+    let runner = runner();
+    let plan = GatePlan::new(shell("true")).testing_with(shell("true")).deciding_at(0.01);
+    let report = Harness::new(&runner, plan).verify(&Candidate::new("c").sized(measured(10, 9)));
+
+    let outcome = report.outcome(Gate::BenchmarkNotWorse).unwrap();
+    assert_eq!(outcome.qualified_label(), "BenchmarkNotWorse { significance: 0.01 }");
 }
 
 #[test]
@@ -131,7 +160,7 @@ fn sanitizers_run_only_when_unsafe_is_touched_and_the_skip_states_why() {
     assert!(report.passed());
     let outcome = report.outcome(Gate::MiriClean).unwrap();
     assert_eq!(outcome.result.label(), "Skipped");
-    assert!(outcome.detail.contains("does not touch unsafe"));
+    assert!(outcome.detail.contains("no unsafe touched"));
 }
 
 #[test]

@@ -62,8 +62,13 @@ pub struct GatePlan {
     /// reported as a skip with that reason rather than as a pass.
     pub miri: Option<ToolInvocation>,
     /// Warnings the baseline build already emitted. A candidate is judged on
-    /// the difference, not the total.
+    /// the difference, not the total: a project that starts with warnings is
+    /// not thereby forbidden a smaller binary.
     pub baseline_warnings: usize,
+    /// The significance level `BenchmarkNotWorse` decides at. Shown beside the
+    /// gate's name, because a threshold that decides a verdict belongs on
+    /// screen next to the verdict.
+    pub significance: f64,
     /// Environment applied to every gate command.
     pub env: BTreeMap<String, String>,
     /// Whether this project makes substantial foreign-function calls. When it
@@ -78,6 +83,7 @@ impl GatePlan {
             test: None,
             miri: None,
             baseline_warnings: 0,
+            significance: 0.05,
             env: BTreeMap::new(),
             substantial_ffi: false,
         }
@@ -105,6 +111,11 @@ impl GatePlan {
 
     pub fn with_substantial_ffi(mut self, substantial_ffi: bool) -> Self {
         self.substantial_ffi = substantial_ffi;
+        self
+    }
+
+    pub fn deciding_at(mut self, significance: f64) -> Self {
+        self.significance = significance;
         self
     }
 }
@@ -186,67 +197,100 @@ impl<'a> Harness<'a> {
     pub fn verify(&self, candidate: &Candidate) -> VerificationReport {
         let mut outcomes = Vec::with_capacity(Gate::ALL.len());
 
-        let build = self.gate_builds();
+        // Building is the only thing everything else depends on, so it runs
+        // first and its result decides how much of the rest can run at all.
+        let (build, warnings) = self.gate_builds();
         let build_failed = build.result.is_failure();
         outcomes.push(build);
 
         if build_failed {
-            for gate in [Gate::TestsPass, Gate::SizeNotWorse, Gate::BenchmarkNotWorse, Gate::MiriClean] {
+            for gate in Gate::ALL.into_iter().filter(|gate| *gate != Gate::Builds) {
                 outcomes.push(GateOutcome::skipped(gate, "the candidate did not build"));
             }
-            return VerificationReport { candidate: candidate.id.clone(), outcomes };
+            let mut report = VerificationReport { candidate: candidate.id.clone(), outcomes };
+            report.in_display_order();
+            return report;
         }
+
+        outcomes.push(self.gate_warnings(warnings));
 
         let tests = self.gate_tests();
         let tests_failed = tests.result.is_failure();
         outcomes.push(tests);
+
+        // Size is free — it was measured before the gates ran — so it is
+        // recorded whatever else happened.
         outcomes.push(self.gate_size(candidate));
 
         if tests_failed {
             for gate in [Gate::BenchmarkNotWorse, Gate::MiriClean] {
-                outcomes.push(GateOutcome::skipped(gate, "the test suite did not pass"));
+                outcomes.push(GateOutcome::skipped(gate, "not reached"));
             }
-            return VerificationReport { candidate: candidate.id.clone(), outcomes };
+            let mut report = VerificationReport { candidate: candidate.id.clone(), outcomes };
+            report.in_display_order();
+            return report;
         }
 
         outcomes.push(self.gate_benchmark(candidate));
         outcomes.push(self.gate_sanitizers(candidate));
-        VerificationReport { candidate: candidate.id.clone(), outcomes }
+
+        let mut report = VerificationReport { candidate: candidate.id.clone(), outcomes };
+        report.in_display_order();
+        report
     }
 
-    fn gate_builds(&self) -> GateOutcome {
+    /// Run the build, and report how long it took and how much it complained.
+    ///
+    /// Returns the warning count alongside, because the gate that judges it is
+    /// a separate row and re-running the build to count them twice would be
+    /// absurd.
+    fn gate_builds(&self) -> (GateOutcome, Option<usize>) {
         let output = match self.runner.run_with_env(self.plan.build.clone(), &self.plan.env) {
             Ok(output) => output,
             Err(error) => {
-                return GateOutcome::new(Gate::Builds, GateResult::Failed, error.to_string());
+                return (
+                    GateOutcome::new(Gate::Builds, GateResult::Failed, error.to_string()),
+                    None,
+                );
             }
         };
 
         if !output.succeeded() {
             let detail = first_error_line(&output.stderr)
                 .unwrap_or_else(|| format!("the build exited {}", output.exit_code));
-            return GateOutcome::new(Gate::Builds, GateResult::Failed, detail)
-                .citing(output.evidence);
+            return (
+                GateOutcome::new(Gate::Builds, GateResult::Failed, detail)
+                    .citing(output.evidence),
+                None,
+            );
         }
 
         let warnings = count_warnings(&output.stderr);
+        let outcome = GateOutcome::new(
+            Gate::Builds,
+            GateResult::Passed,
+            format!("{:?}", output.duration),
+        )
+        .citing(output.evidence);
+        (outcome, Some(warnings))
+    }
+
+    /// Judged against the baseline, never against zero.
+    fn gate_warnings(&self, warnings: Option<usize>) -> GateOutcome {
+        let Some(warnings) = warnings else {
+            return GateOutcome::skipped(Gate::NoNewWarnings, "the build produced no output to read");
+        };
         let baseline = self.plan.baseline_warnings;
         if warnings > baseline {
             let added = warnings - baseline;
-            return GateOutcome::new(
-                Gate::Builds,
+            GateOutcome::new(
+                Gate::NoNewWarnings,
                 GateResult::Failed,
-                format!("builds, but adds {added} warning(s) the baseline did not have"),
+                format!("{added} new"),
             )
-            .citing(output.evidence);
-        }
-
-        let detail = if warnings == baseline && warnings > 0 {
-            format!("builds, with the baseline's {warnings} warning(s)")
         } else {
-            "builds cleanly".to_string()
-        };
-        GateOutcome::new(Gate::Builds, GateResult::Passed, detail).citing(output.evidence)
+            GateOutcome::new(Gate::NoNewWarnings, GateResult::Passed, "0 new")
+        }
     }
 
     fn gate_tests(&self) -> GateOutcome {
@@ -290,7 +334,8 @@ impl<'a> Harness<'a> {
 
     fn gate_benchmark(&self, candidate: &Candidate) -> GateOutcome {
         let Some(verdict) = candidate.benchmark.clone() else {
-            return GateOutcome::skipped(Gate::BenchmarkNotWorse, "no benchmark is declared");
+            return GateOutcome::skipped(Gate::BenchmarkNotWorse, "no benchmark is declared")
+                .configured(format!("significance: {}", self.plan.significance));
         };
         let mut outcome = match verdict {
             BenchmarkVerdict::Improved { detail }
@@ -307,12 +352,12 @@ impl<'a> Harness<'a> {
             ),
         };
         outcome.evidence = candidate.measurement_evidence.clone();
-        outcome
+        outcome.configured(format!("significance: {}", self.plan.significance))
     }
 
     fn gate_sanitizers(&self, candidate: &Candidate) -> GateOutcome {
         if !candidate.touches_unsafe {
-            return GateOutcome::skipped(Gate::MiriClean, "the change does not touch unsafe");
+            return GateOutcome::skipped(Gate::MiriClean, "no unsafe touched");
         }
         let Some(miri) = self.plan.miri.clone() else {
             return GateOutcome::skipped(
