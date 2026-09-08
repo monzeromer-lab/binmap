@@ -214,32 +214,21 @@ fn events_for_a_run_we_never_saw_start_are_ignored_rather_than_invented() {
 fn probes_keep_their_reported_grouping_and_the_unmet_ones_are_counted() {
     let mut state = AppState::new();
     state.set_probes(vec![
-        Probe {
-            group: "Rust".into(),
-            name: "cargo".into(),
-            status: ProbeStatus::Present,
-            detail: "cargo 1.96.0".into(),
-            remedy: None,
-        },
-        Probe {
-            group: "Verification".into(),
-            name: "miri".into(),
-            status: ProbeStatus::Missing,
-            detail: "unsafe code will be reported as unchecked".into(),
-            remedy: Some("rustup toolchain install nightly --component miri".into()),
-        },
-        Probe {
-            group: "Rust".into(),
-            name: "rustc".into(),
-            status: ProbeStatus::Present,
-            detail: "rustc 1.96.0".into(),
-            remedy: None,
-        },
+        Probe::present("Rust target", "cargo", "cargo 1.96.0"),
+        Probe::needs(
+            "Verification",
+            "miri",
+            ProbeStatus::Missing,
+            "unsafe code will be reported as unchecked",
+            "rustup toolchain install nightly --component miri",
+        )
+        .with_action("Install"),
+        Probe::present("Rust target", "rustc", "rustc 1.96.0"),
     ]);
 
     let groups = state.probes_by_group();
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].0, "Rust");
+    assert_eq!(groups[0].0, "Rust target");
     assert_eq!(groups[0].1.len(), 2, "a later Rust probe joins the group it named");
     assert_eq!(state.unmet_probes(), 1);
 }

@@ -37,5 +37,15 @@ serde_json = "1.0"
 thiserror = "2.0"
 tracing = "0.1"
 
+# TOOLING.md §1: link in when the output is structured data queried repeatedly;
+# shell out when the tool is years of specialised work producing a report.
+object = { version = "0.40.0", default-features = false, features = ["read", "std", "elf"] }
+cargo_metadata = "0.23.1"
+toml_edit = "0.25.13"
+similar = "3.2.0"
+statrs = "0.19.1"
+clap = { version = "4.6.6", features = ["derive"] }
+tempfile = "3.27.0"
+
 [profile.release]
 debug = 1

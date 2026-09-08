@@ -32,6 +32,60 @@ pub struct Probe {
     /// The command that fixes it. `None` when nothing is wrong.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remedy: Option<String>,
+    /// The label for the button beside the fix, where the fix can be applied
+    /// from inside the application. `U10`: every fix that can be applied
+    /// in-app has a button next to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+}
+
+impl Probe {
+    pub fn present(
+        group: impl Into<String>,
+        name: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            group: group.into(),
+            name: name.into(),
+            status: ProbeStatus::Present,
+            detail: detail.into(),
+            remedy: None,
+            action: None,
+        }
+    }
+
+    /// Something is wrong, and this is the command that fixes it.
+    ///
+    /// The remedy is not optional here: a probe that reports a problem without
+    /// saying what to type has told the user there is a problem and left them
+    /// with it.
+    pub fn needs(
+        group: impl Into<String>,
+        name: impl Into<String>,
+        status: ProbeStatus,
+        detail: impl Into<String>,
+        remedy: impl Into<String>,
+    ) -> Self {
+        Self {
+            group: group.into(),
+            name: name.into(),
+            status,
+            detail: detail.into(),
+            remedy: Some(remedy.into()),
+            action: None,
+        }
+    }
+
+    /// Attach the label for the in-app button.
+    pub fn with_action(mut self, action: impl Into<String>) -> Self {
+        self.action = Some(action.into());
+        self
+    }
+
+    pub fn needs_attention(&self) -> bool {
+        self.status != ProbeStatus::Present
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

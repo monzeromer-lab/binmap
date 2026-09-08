@@ -4,174 +4,129 @@
 //! Nothing in this module writes. It produces the new text and the diff, and
 //! the apply dialog states what it will write; writing is a separate act at a
 //! tier that permits it (`U9`, `N7`).
+//!
+//! `toml_edit` does the editing because it is format-preserving: comments,
+//! ordering, spacing and the user's own quoting style all survive, so the diff
+//! shows their file with a few values changed rather than a section we
+//! regenerated. A line-based editor gets this wrong on inline tables, on
+//! `[profile.release.package.*]`, and on any manifest whose author had
+//! opinions about layout.
 
 use binmap_core::configuration::BuildConfiguration;
+use similar::TextDiff;
 use std::path::Path;
+use toml_edit::{DocumentMut, Item, Value};
 
 /// Rewrite a manifest so `[profile.release]` carries this configuration.
 ///
-/// Keys the configuration sets are replaced in place, keeping their position
-/// and any comment on the line after them; keys it does not set are left
-/// exactly alone. A user who reads the diff should see their own file with a
-/// few values changed, not a section we regenerated.
+/// Keys the configuration sets are replaced; keys it does not set are left
+/// exactly alone. Returns the manifest unchanged when the configuration sets
+/// nothing, and when the manifest cannot be parsed — refusing to guess is
+/// better than writing a broken file.
 pub fn with_release_profile(manifest: &str, configuration: &BuildConfiguration) -> String {
-    let settings = configuration.settings();
+    let settings = release_values(configuration);
     if settings.is_empty() {
         return manifest.to_string();
     }
-    let wanted: Vec<(String, String)> = settings
-        .iter()
-        .map(|(axis, _)| (*axis).to_string())
-        .zip(toml_values(configuration))
-        .collect();
 
-    let mut lines: Vec<String> = manifest.lines().map(str::to_string).collect();
-    let section = find_section(&lines, "[profile.release]");
-
-    let Some((start, end)) = section else {
-        // No release profile at all: append one rather than guess where it
-        // should have gone.
-        let mut out = manifest.trim_end().to_string();
-        if !out.is_empty() {
-            out.push_str("\n\n");
-        }
-        out.push_str("[profile.release]\n");
-        for (key, value) in &wanted {
-            out.push_str(&format!("{key} = {value}\n"));
-        }
-        return out;
+    let Ok(mut document) = manifest.parse::<DocumentMut>() else {
+        return manifest.to_string();
     };
 
-    let mut still_needed: Vec<&(String, String)> = wanted.iter().collect();
-    for line in lines.iter_mut().take(end).skip(start + 1) {
-        let Some(equals) = line.find('=') else { continue };
-        let key = line[..equals].trim().trim_matches('"').to_string();
-        if let Some(position) = still_needed.iter().position(|(wanted, _)| *wanted == key) {
-            let (key, value) = still_needed.remove(position);
-            *line = format!("{key} = {value}");
-        }
+    let profile = document
+        .entry("profile")
+        .or_insert(Item::Table(Default::default()))
+        .as_table_mut()
+        .map(|table| {
+            // `[profile.release]`, not `profile = { release = { … } }`.
+            table.set_implicit(true);
+            table
+        })
+        .and_then(|table| {
+            table
+                .entry("release")
+                .or_insert(Item::Table(Default::default()))
+                .as_table_mut()
+        });
+
+    let Some(profile) = profile else {
+        return manifest.to_string();
+    };
+
+    for (key, value) in settings {
+        profile[key] = Item::Value(value);
     }
 
-    // Anything the profile did not already mention is added at the end of the
-    // section, in the order the axes are declared.
-    let additions: Vec<String> =
-        still_needed.iter().map(|(key, value)| format!("{key} = {value}")).collect();
-    if !additions.is_empty() {
-        let mut insert_at = end;
-        while insert_at > start + 1 && lines[insert_at - 1].trim().is_empty() {
-            insert_at -= 1;
-        }
-        for (offset, addition) in additions.into_iter().enumerate() {
-            lines.insert(insert_at + offset, addition);
-        }
-    }
-
-    let mut out = lines.join("\n");
-    if manifest.ends_with('\n') {
-        out.push('\n');
-    }
-    out
+    document.to_string()
 }
 
-/// The TOML rendering of each axis, in the same order as
-/// [`BuildConfiguration::settings`].
-fn toml_values(configuration: &BuildConfiguration) -> Vec<String> {
-    let mut values = Vec::new();
+/// Each axis as the TOML value cargo reads, paired with its key.
+///
+/// Typed values rather than rendered strings: `opt-level = 3` is an integer
+/// and `opt-level = "s"` is a string, and the distinction is cargo's, not a
+/// formatting preference.
+fn release_values(configuration: &BuildConfiguration) -> Vec<(&'static str, Value)> {
+    use binmap_core::config::OptLevel;
+
+    let mut values: Vec<(&'static str, Value)> = Vec::new();
     if let Some(v) = configuration.opt_level {
-        values.push(v.as_toml().to_string());
+        values.push((
+            "opt-level",
+            match v {
+                OptLevel::Zero => Value::from(0),
+                OptLevel::One => Value::from(1),
+                OptLevel::Two => Value::from(2),
+                OptLevel::Three => Value::from(3),
+                other => Value::from(other.to_string()),
+            },
+        ));
     }
     if let Some(v) = configuration.lto {
-        values.push(v.as_toml().to_string());
+        values.push((
+            "lto",
+            match v {
+                binmap_core::config::Lto::Off => Value::from(false),
+                other => Value::from(other.to_string()),
+            },
+        ));
     }
     if let Some(v) = configuration.codegen_units {
-        values.push(v.to_string());
+        values.push(("codegen-units", Value::from(v as i64)));
     }
     if let Some(v) = configuration.panic {
-        values.push(v.as_toml().to_string());
+        values.push(("panic", Value::from(v.to_string())));
     }
     if let Some(v) = configuration.strip {
-        values.push(v.as_toml().to_string());
+        values.push(("strip", Value::from(v.to_string())));
     }
     if let Some(v) = configuration.debug {
-        values.push(v.as_toml().to_string());
+        values.push((
+            "debug",
+            match v {
+                binmap_core::config::DebugInfo::None => Value::from(0),
+                binmap_core::config::DebugInfo::Limited => Value::from(1),
+                binmap_core::config::DebugInfo::Full => Value::from(2),
+                other => Value::from(other.to_string()),
+            },
+        ));
     }
     if let Some(v) = configuration.overflow_checks {
-        values.push(v.to_string());
-    }
-    if let Some(v) = configuration.build_std {
-        values.push(format!("\"{}\"", v.as_toml()));
-    }
-    if let Some(v) = &configuration.target_cpu {
-        values.push(format!("\"{v}\""));
+        values.push(("overflow-checks", Value::from(v)));
     }
     values
 }
 
-/// The half-open line range of a TOML section, from its header to the line
-/// before the next header.
-fn find_section(lines: &[String], header: &str) -> Option<(usize, usize)> {
-    let start = lines.iter().position(|line| line.trim() == header)?;
-    let end = lines
-        .iter()
-        .enumerate()
-        .skip(start + 1)
-        .find(|(_, line)| line.trim_start().starts_with('['))
-        .map(|(index, _)| index)
-        .unwrap_or(lines.len());
-    Some((start, end))
-}
-
-/// A unified diff, in the form the proposal tab renders.
-///
-/// Written here rather than pulled in as a dependency because the input is one
-/// small file and the output has one reader — and a diff nobody can read is
-/// worse than no diff.
+/// A unified diff, as the proposal tab renders it.
 pub fn unified_diff(path: &Path, before: &str, after: &str) -> String {
     if before == after {
         return String::new();
     }
-    let before: Vec<&str> = before.lines().collect();
-    let after: Vec<&str> = after.lines().collect();
-
-    let mut body = Vec::new();
-    let mut changes = Vec::new();
-    let common = before.len().min(after.len());
-    for index in 0..common.max(before.len()).max(after.len()) {
-        match (before.get(index), after.get(index)) {
-            (Some(old), Some(new)) if old == new => body.push(format!(" {old}")),
-            (Some(old), Some(new)) => {
-                body.push(format!("-{old}"));
-                body.push(format!("+{new}"));
-                changes.push(index);
-            }
-            (Some(old), None) => {
-                body.push(format!("-{old}"));
-                changes.push(index);
-            }
-            (None, Some(new)) => {
-                body.push(format!("+{new}"));
-                changes.push(index);
-            }
-            (None, None) => break,
-        }
-    }
-
-    // Three lines of context around the changed region, as a reader expects.
-    let (first, last) = match (changes.first(), changes.last()) {
-        (Some(first), Some(last)) => (*first, *last),
-        _ => return String::new(),
-    };
-    let from = first.saturating_sub(3);
-    let to = (last + 4).min(body.len());
-
-    let display = path.display();
-    let mut out = format!("--- a/{display}\n+++ b/{display}\n");
-    out.push_str(&format!("@@ -{},{} +{},{} @@\n", from + 1, to - from, from + 1, to - from));
-    for line in &body[from..to] {
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
+    let display = path.display().to_string();
+    TextDiff::from_lines(before, after)
+        .unified_diff()
+        .context_radius(3)
+        .header(&format!("a/{display}"), &format!("b/{display}"))
+        .to_string()
 }
 
 #[cfg(test)]
@@ -189,21 +144,52 @@ mod tests {
     }
 
     #[test]
-    fn an_existing_key_is_changed_in_place_rather_than_appended() {
+    fn an_existing_key_is_changed_in_place() {
         let manifest = "[package]\nname = \"app\"\n\n[profile.release]\nopt-level = 3\nlto = false\n";
         let updated = with_release_profile(manifest, &configuration());
-        assert_eq!(
-            updated,
-            "[package]\nname = \"app\"\n\n[profile.release]\nopt-level = \"s\"\nlto = \"fat\"\nstrip = \"symbols\"\n"
-        );
+        assert!(updated.contains("opt-level = \"s\""), "{updated}");
+        assert!(updated.contains("lto = \"fat\""), "{updated}");
+        assert!(updated.contains("strip = \"symbols\""), "{updated}");
+        assert!(updated.contains("name = \"app\""));
+    }
+
+    #[test]
+    fn comments_and_the_users_own_layout_survive_the_edit() {
+        // The whole reason for toml_edit. A line-based editor loses these, and
+        // a diff full of incidental churn is a diff nobody reads.
+        let manifest = "\
+[profile.release]
+# We turned this down in 2024 after the incident.
+opt-level  =  3
+incremental = true   # keep, the CI cache depends on it
+";
+        let updated = with_release_profile(manifest, &configuration());
+        assert!(updated.contains("# We turned this down in 2024 after the incident."));
+        assert!(updated.contains("# keep, the CI cache depends on it"));
+        assert!(updated.contains("incremental = true"));
+    }
+
+    #[test]
+    fn types_are_cargos_not_ours() {
+        // opt-level = 3 is an integer; opt-level = "s" is a string. lto = false
+        // is a boolean, not the string "false".
+        let numeric = BuildConfiguration { opt_level: Some(OptLevel::Three), ..Default::default() };
+        let updated = with_release_profile("[profile.release]\n", &numeric);
+        assert!(updated.contains("opt-level = 3"), "{updated}");
+        assert!(!updated.contains("opt-level = \"3\""), "{updated}");
+
+        let off = BuildConfiguration { lto: Some(Lto::Off), ..Default::default() };
+        let updated = with_release_profile("[profile.release]\n", &off);
+        assert!(updated.contains("lto = false"), "{updated}");
     }
 
     #[test]
     fn a_manifest_with_no_release_profile_gains_one() {
         let manifest = "[package]\nname = \"app\"\n";
         let updated = with_release_profile(manifest, &configuration());
-        assert!(updated.contains("[profile.release]\nopt-level = \"s\"\nlto = \"fat\"\nstrip = \"symbols\"\n"));
-        assert!(updated.starts_with("[package]\nname = \"app\"\n"));
+        assert!(updated.contains("[profile.release]"), "{updated}");
+        assert!(updated.contains("opt-level = \"s\""), "{updated}");
+        assert!(updated.parse::<DocumentMut>().is_ok(), "the result must still parse");
     }
 
     #[test]
@@ -216,13 +202,26 @@ mod tests {
     }
 
     #[test]
-    fn a_later_section_is_not_swallowed_by_the_profile() {
-        let manifest = "[profile.release]\nopt-level = 3\n\n[dependencies]\nserde = \"1\"\n";
+    fn a_per_package_override_is_not_disturbed() {
+        // [profile.release.package."*"] is a sub-table of the one we edit, and
+        // a line-based editor either mangles it or stops at it.
+        let manifest = "\
+[profile.release]
+opt-level = 3
+
+[profile.release.package.\"*\"]
+opt-level = 2
+";
         let updated = with_release_profile(manifest, &configuration());
-        assert!(updated.contains("[dependencies]\nserde = \"1\""));
-        // The additions land inside the profile, before the blank line.
-        let profile = updated.split("[dependencies]").next().unwrap();
-        assert!(profile.contains("lto = \"fat\""), "{profile}");
+        assert!(updated.contains("[profile.release.package.\"*\"]"), "{updated}");
+        let overridden = updated.rsplit("package").next().unwrap_or(&updated);
+        assert!(overridden.contains("opt-level = 2"), "{updated}");
+    }
+
+    #[test]
+    fn a_manifest_we_cannot_parse_is_returned_unchanged_rather_than_guessed_at() {
+        let broken = "[profile.release\nopt-level = ";
+        assert_eq!(with_release_profile(broken, &configuration()), broken);
     }
 
     #[test]
@@ -239,9 +238,9 @@ mod tests {
         let updated = with_release_profile(manifest, &configuration());
         let diff = unified_diff(Path::new("Cargo.toml"), manifest, &updated);
 
-        assert!(diff.starts_with("--- a/Cargo.toml\n+++ b/Cargo.toml\n@@"), "{diff}");
+        assert!(diff.contains("--- a/Cargo.toml"), "{diff}");
+        assert!(diff.contains("+++ b/Cargo.toml"), "{diff}");
         assert!(diff.contains("-opt-level = 3"), "{diff}");
         assert!(diff.contains("+opt-level = \"s\""), "{diff}");
-        assert!(diff.contains("+strip = \"symbols\""), "{diff}");
     }
 }

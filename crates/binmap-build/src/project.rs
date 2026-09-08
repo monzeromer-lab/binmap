@@ -6,36 +6,14 @@ use binmap_core::error::{Error, Result};
 use binmap_core::evidence::ToolInvocation;
 use binmap_core::tool::ToolRunner;
 use binmap_core::traits::{Target, TargetFamily};
-use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use cargo_metadata::{MetadataCommand, Package, TargetKind};
+use std::path::Path;
 
 /// Whether the directory holds one package or a workspace of them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectKind {
     Package { name: String },
     Workspace { members: Vec<String> },
-}
-
-/// Only the parts of `cargo metadata` we actually read. Deserializing the
-/// whole document would couple us to fields cargo is free to change.
-#[derive(Debug, Deserialize)]
-struct Metadata {
-    packages: Vec<MetadataPackage>,
-    workspace_members: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MetadataPackage {
-    id: String,
-    name: String,
-    manifest_path: PathBuf,
-    targets: Vec<MetadataTarget>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MetadataTarget {
-    name: String,
-    kind: Vec<String>,
 }
 
 /// What Binmap can do with a Rust target in Phase 0.
@@ -53,86 +31,80 @@ fn phase_zero_capabilities() -> Capabilities {
 /// Tests, benches and examples are excluded: they are built from the same
 /// code but they are not what ships, and sweeping them would measure the wrong
 /// binary convincingly.
-fn is_measurable(kind: &str) -> bool {
-    matches!(kind, "bin" | "lib" | "rlib" | "cdylib" | "staticlib")
+fn is_measurable(kind: &TargetKind) -> bool {
+    matches!(
+        kind,
+        TargetKind::Bin
+            | TargetKind::Lib
+            | TargetKind::RLib
+            | TargetKind::CDyLib
+            | TargetKind::StaticLib
+    )
 }
 
 /// Find the project at `root` and enumerate what it offers.
 ///
-/// Runs `cargo metadata`, so the answer comes from cargo rather than from our
-/// own reading of a manifest — and the invocation is recorded like any other.
+/// `cargo_metadata` is the workspace model (TOOLING §3.1): packages, targets,
+/// features, the dependency graph and the target directory. Hand-rolling the
+/// subset we need would work right up until cargo changed something.
+///
+/// The invocation is still recorded like any other, because the evidence store
+/// is not an optional courtesy.
 pub fn discover(runner: &ToolRunner, root: &Path) -> Result<(ProjectKind, Vec<Target>)> {
-    if !root.join("Cargo.toml").exists() {
+    let manifest = root.join("Cargo.toml");
+    if !manifest.exists() {
         return Err(Error::NoProject(root.to_path_buf()));
     }
 
-    let output = runner.run(
-        ToolInvocation::new(
-            "cargo",
-            ["metadata", "--no-deps", "--format-version", "1", "--offline"],
-        )
-        .in_directory(root.display().to_string()),
-    )?;
+    // Recorded before the read, so a project that cannot be enumerated still
+    // leaves a trace of the attempt.
+    let pending = runner.store().begin(
+        ToolInvocation::new("cargo", ["metadata", "--no-deps", "--format-version", "1"])
+            .in_directory(root.display().to_string()),
+    );
 
-    // `--offline` fails on a project whose dependencies are not vendored yet.
-    // That is worth one retry online rather than a dead end for the user.
-    let output = if output.succeeded() {
-        output
-    } else {
-        runner.run(
-            ToolInvocation::new("cargo", ["metadata", "--no-deps", "--format-version", "1"])
-                .in_directory(root.display().to_string()),
-        )?
+    let metadata = match MetadataCommand::new().manifest_path(&manifest).no_deps().exec() {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            let reason = error.to_string();
+            runner.store().complete(pending, &reason, 1);
+            return Err(Error::Config(reason));
+        }
     };
 
-    if !output.succeeded() {
-        let reason = output
-            .stderr
-            .lines()
-            .find(|line| line.trim_start().starts_with("error"))
-            .unwrap_or("cargo metadata failed")
-            .trim()
-            .to_string();
-        return Err(Error::Config(reason));
+    let members: Vec<&Package> =
+        metadata.workspace_packages().into_iter().collect();
+
+    let mut report = String::new();
+    let mut targets = Vec::new();
+    for package in &members {
+        for target in &package.targets {
+            if !target.kind.iter().any(is_measurable) {
+                continue;
+            }
+            report.push_str(&format!("{} {}\n", package.name, target.name));
+            targets.push(Target {
+                id: format!("{}::{}", package.name, target.name),
+                name: target.name.to_string(),
+                family: TargetFamily::Rust,
+                package: package.name.to_string(),
+                manifest: package.manifest_path.clone().into_std_path_buf(),
+                capabilities: phase_zero_capabilities(),
+            });
+        }
     }
-
-    let metadata: Metadata = serde_json::from_str(&output.stdout)
-        .map_err(|source| Error::serialization("reading cargo metadata", source))?;
-
-    let members: Vec<&MetadataPackage> = metadata
-        .packages
-        .iter()
-        .filter(|package| metadata.workspace_members.contains(&package.id))
-        .collect();
+    runner.store().complete(pending, report, 0);
 
     // A workspace with one member reads as a package: the distinction that
     // matters to the project view is how many targets it has to group, not
     // which manifest key declared them.
     let kind = if members.len() == 1 {
-        ProjectKind::Package { name: members[0].name.clone() }
+        ProjectKind::Package { name: members[0].name.to_string() }
     } else {
         ProjectKind::Workspace {
-            members: members.iter().map(|package| package.name.clone()).collect(),
+            members: members.iter().map(|package| package.name.to_string()).collect(),
         }
     };
-
-    let mut targets = Vec::new();
-    for package in members {
-        for target in &package.targets {
-            let Some(kind) = target.kind.iter().find(|kind| is_measurable(kind)) else {
-                continue;
-            };
-            targets.push(Target {
-                id: format!("{}::{}", package.name, target.name),
-                name: target.name.clone(),
-                family: TargetFamily::Rust,
-                package: package.name.clone(),
-                manifest: package.manifest_path.clone(),
-                capabilities: phase_zero_capabilities(),
-            });
-            let _ = kind;
-        }
-    }
 
     targets.sort_by(|a, b| a.id.cmp(&b.id));
     Ok((kind, targets))

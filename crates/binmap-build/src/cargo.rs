@@ -67,17 +67,46 @@ impl CargoBuildSystem {
         // stderr so the Builds gate can count warnings the way a person does.
         arguments.push("--message-format".into());
         arguments.push("json-render-diagnostics".into());
-        arguments.extend(configuration.cargo_config_args());
         arguments
     }
 
+    /// The command a user would retype to reproduce one point by hand.
+    ///
+    /// The sweep configures cargo through the environment; this is the same
+    /// configuration spelled as `--config` arguments, and it is what the
+    /// Profile Lab shows beside a point.
+    pub fn reproduction_command(
+        &self,
+        target: &Target,
+        configuration: &BuildConfiguration,
+    ) -> String {
+        let mut parts = vec!["cargo".to_string(), "build".to_string(), "--release".to_string()];
+        parts.extend(configuration.unstable_args());
+        parts.push("--package".into());
+        parts.push(target.package.clone());
+        parts.extend(configuration.cargo_config_args());
+        parts.join(" ")
+    }
+
+    /// The environment one configuration is built under.
+    ///
+    /// TOOLING §3.2: a sweep is a loop over environment maps. The working tree
+    /// is never modified, which is what makes cancellation leave nothing to
+    /// clean up.
     fn env_for(&self, configuration: &BuildConfiguration) -> BTreeMap<String, String> {
-        let mut env = BTreeMap::new();
+        let mut env = configuration.cargo_profile_env();
         let flags = configuration.rustflags();
         if !flags.is_empty() {
             env.insert("RUSTFLAGS".to_string(), flags.join(" "));
         }
         env
+    }
+
+    /// Exposed so the sweep's own integration test can assert that each axis
+    /// actually changes the build — the mitigation TOOLING §8 asks for against
+    /// cargo's profile-variable naming shifting under us.
+    pub fn environment_for(&self, configuration: &BuildConfiguration) -> BTreeMap<String, String> {
+        self.env_for(configuration)
     }
 }
 
@@ -226,13 +255,26 @@ mod tests {
     }
 
     #[test]
-    fn the_configuration_reaches_cargo_as_arguments_not_as_a_manifest_edit() {
+    fn the_configuration_reaches_cargo_through_the_environment_not_a_manifest_edit() {
         let system = system();
         let configuration =
             BuildConfiguration { opt_level: Some(OptLevel::Size), ..Default::default() };
+        let env = system.environment_for(&configuration);
+        assert_eq!(env.get("CARGO_PROFILE_RELEASE_OPT_LEVEL").map(String::as_str), Some("s"));
+        // Nothing on the command line mentions the manifest, and nothing
+        // writes to it.
         let arguments = system.build_arguments(&target(), &configuration);
-        assert!(arguments.contains(&"profile.release.opt-level=\"s\"".to_string()));
         assert!(!arguments.iter().any(|a| a.contains("Cargo.toml")));
+    }
+
+    #[test]
+    fn the_reproduction_command_is_something_a_user_can_retype() {
+        let system = system();
+        let configuration =
+            BuildConfiguration { opt_level: Some(OptLevel::Size), ..Default::default() };
+        let command = system.reproduction_command(&target(), &configuration);
+        assert!(command.starts_with("cargo build --release"), "{command}");
+        assert!(command.contains("--config profile.release.opt-level=\"s\""), "{command}");
     }
 
     #[test]

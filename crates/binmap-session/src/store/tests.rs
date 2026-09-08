@@ -37,11 +37,8 @@ fn session() -> (SessionArtifact, EvidenceStore) {
     (artifact, store)
 }
 
-fn temp_directory(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("binmap-session-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&path);
-    std::fs::create_dir_all(&path).unwrap();
-    path
+fn temp_directory() -> tempfile::TempDir {
+    tempfile::tempdir().expect("a temporary directory")
 }
 
 fn redactor() -> Redactor {
@@ -50,8 +47,9 @@ fn redactor() -> Redactor {
 
 #[test]
 fn a_session_round_trips_through_disk_with_its_findings_intact() {
-    let directory = temp_directory("round-trip");
-    let store = SessionStore::new(&directory).with_redactor(redactor());
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory).with_redactor(redactor());
     let (artifact, _) = session();
 
     store.save(&artifact).unwrap();
@@ -64,22 +62,21 @@ fn a_session_round_trips_through_disk_with_its_findings_intact() {
     // The evidence store came back populated, so the Inspector has something
     // to show without re-running anything.
     assert_eq!(restored.evidence.len(), 1);
-
-    let _ = std::fs::remove_dir_all(&directory);
 }
 
 #[test]
 fn a_session_that_was_never_saved_loads_as_nothing_rather_than_as_an_error() {
-    let directory = temp_directory("absent");
-    let store = SessionStore::new(&directory);
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory);
     assert!(store.load("never::saved").unwrap().is_none());
-    let _ = std::fs::remove_dir_all(&directory);
 }
 
 #[test]
 fn tampering_with_evidence_on_disk_drops_the_findings_that_cite_it_by_name() {
-    let directory = temp_directory("tampered");
-    let store = SessionStore::new(&directory).with_redactor(redactor());
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory).with_redactor(redactor());
     let (artifact, _) = session();
     let path = store.save(&artifact).unwrap();
 
@@ -94,14 +91,13 @@ fn tampering_with_evidence_on_disk_drops_the_findings_that_cite_it_by_name() {
     assert_eq!(restored.ungrounded_findings, vec!["cfg-ols".to_string()]);
     let notice = restored.refusal_notice().expect("the user is told");
     assert!(notice.contains("cfg-ols"), "{notice}");
-
-    let _ = std::fs::remove_dir_all(&directory);
 }
 
 #[test]
 fn an_export_redacts_and_reports_what_it_changed() {
-    let directory = temp_directory("export");
-    let store = SessionStore::new(&directory).with_redactor(redactor());
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory).with_redactor(redactor());
     let (artifact, _) = session();
 
     let path = directory.join("shared.binmap.json");
@@ -111,14 +107,13 @@ fn an_export_redacts_and_reports_what_it_changed() {
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(!text.contains("/home/ada"), "the home directory survived the export");
     assert!(text.contains("~/projects/app"));
-
-    let _ = std::fs::remove_dir_all(&directory);
 }
 
 #[test]
 fn an_exported_artifact_admits_that_its_evidence_was_altered() {
-    let directory = temp_directory("admits");
-    let store = SessionStore::new(&directory).with_redactor(redactor());
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory).with_redactor(redactor());
     let (artifact, _) = session();
     let path = directory.join("shared.binmap.json");
     store.export(&artifact, &path).unwrap();
@@ -131,14 +126,13 @@ fn an_exported_artifact_admits_that_its_evidence_was_altered() {
     assert_eq!(restored.tampered_evidence.len(), 1);
     let described = restored.artifact.redacted.as_ref().unwrap().describe();
     assert!(described.starts_with("Redacted: "), "{described}");
-
-    let _ = std::fs::remove_dir_all(&directory);
 }
 
 #[test]
 fn a_session_from_a_newer_schema_is_refused_with_a_sentence() {
-    let directory = temp_directory("newer");
-    let store = SessionStore::new(&directory);
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory);
     let (mut artifact, _) = session();
     artifact.schema_version = crate::SCHEMA_VERSION + 1;
     artifact.binmap_version = "0.9.0".into();
@@ -149,8 +143,6 @@ fn a_session_from_a_newer_schema_is_refused_with_a_sentence() {
     let error = store.read(&path).unwrap_err().to_string();
     assert!(error.contains("0.9.0"), "{error}");
     assert!(error.contains("this build reads up to"), "{error}");
-
-    let _ = std::fs::remove_dir_all(&directory);
 }
 
 #[test]

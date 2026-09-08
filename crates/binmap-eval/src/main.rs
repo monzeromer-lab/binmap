@@ -19,23 +19,68 @@ use binmap_core::facade::{Engine, ProbeStatus};
 use binmap_session::artifact::{SessionArtifact, TargetMetadata};
 use binmap_session::SessionStore;
 use binmap_verify::GatePlan;
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-fn main() -> ExitCode {
-    let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let command = arguments.first().map(String::as_str).unwrap_or("help");
+/// Development-only harness. Not a product surface.
+#[derive(Parser, Debug)]
+#[command(
+    name = "binmap-eval",
+    about = "Development-only harness for the Binmap engine. Never shipped.",
+    long_about = "N8 is binding: Binmap ships one GUI binary and no command-line tool. \
+                  This exists so every phase's acceptance criterion is measured through the \
+                  engine rather than through the interface (A1.3), and so the suite can drive \
+                  a full sweep without opening a window."
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
 
-    let result = match command {
-        "probe" => probe(&arguments[1..]),
-        "targets" => targets(&arguments[1..]),
-        "sweep" => sweep(&arguments[1..]),
-        "acceptance" => acceptance(&arguments[1..]),
-        "help" | "--help" | "-h" => {
-            usage();
-            return ExitCode::SUCCESS;
-        }
-        other => Err(format!("unknown command `{other}`")),
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Check the environment and report what is missing, with the exact fix.
+    Doctor(Options),
+    /// List the targets this project offers and what Binmap can do with each.
+    Targets(Options),
+    /// Sweep the configuration matrix and print the frontier.
+    Sweep(Options),
+    /// Measure the phase's acceptance criterion and exit non-zero if it fails.
+    Acceptance(Options),
+}
+
+#[derive(Args, Debug, Clone)]
+struct Options {
+    /// The project to open.
+    #[arg(default_value = ".")]
+    root: PathBuf,
+
+    /// The target to analyse. Defaults to the first one the project offers.
+    #[arg(long)]
+    target: Option<String>,
+
+    /// Concurrent builds. Above one, build times are not measured — a
+    /// wall-clock time under concurrent rustc processes measures machine load.
+    #[arg(long)]
+    jobs: Option<usize>,
+
+    /// Write the session artifact here, with the redaction pass applied.
+    #[arg(long)]
+    export: Option<PathBuf>,
+
+    /// The size reduction the acceptance criterion demands, as a fraction.
+    #[arg(long, default_value_t = 0.25)]
+    reduction: f64,
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    let result = match &cli.command {
+        Command::Doctor(options) => doctor(options),
+        Command::Targets(options) => targets(options),
+        Command::Sweep(options) => sweep(options),
+        Command::Acceptance(options) => acceptance(options),
     };
 
     match result {
@@ -46,57 +91,6 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-fn usage() {
-    eprintln!(
-        "binmap-eval — development-only harness. Not a product surface.\n\
-         \n\
-         binmap-eval probe <project>\n\
-         binmap-eval targets <project>\n\
-         binmap-eval sweep <project> [--target ID] [--jobs N] [--export FILE]\n\
-         binmap-eval acceptance <project> [--target ID] [--reduction 0.25]\n"
-    );
-}
-
-/// Options every command shares.
-struct Options {
-    root: PathBuf,
-    target: Option<String>,
-    jobs: Option<usize>,
-    export: Option<PathBuf>,
-    reduction: f64,
-}
-
-fn parse(arguments: &[String]) -> Result<Options, String> {
-    let root = arguments
-        .first()
-        .filter(|first| !first.starts_with("--"))
-        .map(PathBuf::from)
-        .ok_or("a project path is required")?;
-
-    let mut options =
-        Options { root, target: None, jobs: None, export: None, reduction: 0.25 };
-    let mut rest = arguments[1..].iter();
-    while let Some(flag) = rest.next() {
-        let value = || rest.clone().next().cloned().ok_or(format!("{flag} needs a value"));
-        match flag.as_str() {
-            "--target" => options.target = Some(value()?),
-            "--jobs" => {
-                options.jobs = Some(value()?.parse().map_err(|_| "--jobs needs a number")?)
-            }
-            "--export" => options.export = Some(PathBuf::from(value()?)),
-            "--reduction" => {
-                options.reduction =
-                    value()?.parse().map_err(|_| "--reduction needs a fraction, e.g. 0.25")?
-            }
-            other if other.starts_with("--") => return Err(format!("unknown flag `{other}`")),
-            _ => continue,
-        }
-        // Skip the value we just consumed.
-        rest.next();
-    }
-    Ok(options)
 }
 
 fn open(options: &Options) -> Result<BinmapEngine, String> {
@@ -111,9 +105,8 @@ fn open(options: &Options) -> Result<BinmapEngine, String> {
     BinmapEngine::open(config, gates).map_err(|error| error.to_string())
 }
 
-fn probe(arguments: &[String]) -> Result<bool, String> {
-    let options = parse(arguments)?;
-    let engine = open(&options)?;
+fn doctor(options: &Options) -> Result<bool, String> {
+    let engine = open(options)?;
 
     let mut all_present = true;
     for probe in engine.probe_environment() {
@@ -136,9 +129,8 @@ fn probe(arguments: &[String]) -> Result<bool, String> {
     Ok(all_present)
 }
 
-fn targets(arguments: &[String]) -> Result<bool, String> {
-    let options = parse(arguments)?;
-    let engine = open(&options)?;
+fn targets(options: &Options) -> Result<bool, String> {
+    let engine = open(options)?;
     for target in engine.targets().map_err(|error| error.to_string())? {
         println!("{}  [{}]", target.id, target.family.label());
         println!("    {}", target.capabilities.sentence());
@@ -202,10 +194,9 @@ fn run_sweep(engine: &BinmapEngine, options: &Options) -> Result<(SweepState, St
     Ok((state, target.id.clone()))
 }
 
-fn sweep(arguments: &[String]) -> Result<bool, String> {
-    let options = parse(arguments)?;
-    let engine = open(&options)?;
-    let (state, target_id) = run_sweep(&engine, &options)?;
+fn sweep(options: &Options) -> Result<bool, String> {
+    let engine = open(options)?;
+    let (state, target_id) = run_sweep(&engine, options)?;
 
     println!("\nfrontier, smallest first:");
     for index in state.frontier() {
@@ -240,10 +231,9 @@ fn sweep(arguments: &[String]) -> Result<bool, String> {
 /// "On a five-crate reference corpus, a user opens the application, selects a
 /// crate, runs a sweep, and sees a configuration reducing size by at least 25%
 /// against default release with tests passing."
-fn acceptance(arguments: &[String]) -> Result<bool, String> {
-    let options = parse(arguments)?;
-    let engine = open(&options)?;
-    let (state, _) = run_sweep(&engine, &options)?;
+fn acceptance(options: &Options) -> Result<bool, String> {
+    let engine = open(options)?;
+    let (state, _) = run_sweep(&engine, options)?;
 
     let Some(baseline) = state.baseline_bytes else {
         eprintln!("no baseline was measured, so there is nothing to compare against");

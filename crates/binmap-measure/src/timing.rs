@@ -272,23 +272,15 @@ fn mann_whitney(first: &[f64], second: &[f64]) -> Significance {
     Significance { p_value: (2.0 * (1.0 - standard_normal_cdf(z))).clamp(0.0, 1.0) }
 }
 
-/// The standard normal CDF, via the Abramowitz and Stegun 7.1.26 error
-/// function. Accurate to about 1.5e-7, which is far beyond what a p-value
-/// rounded to three places needs.
+/// The standard normal CDF, from `statrs`.
+///
+/// This was a hand-written Abramowitz and Stegun approximation until someone
+/// pointed out that writing your own error function is exactly the kind of
+/// thing a library does better. It is also the number a p-value is derived
+/// from, so being approximately right here is not a virtue.
 fn standard_normal_cdf(z: f64) -> f64 {
-    0.5 * (1.0 + erf(z / std::f64::consts::SQRT_2))
-}
-
-fn erf(x: f64) -> f64 {
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs();
-    let t = 1.0 / (1.0 + 0.3275911 * x);
-    let y = 1.0
-        - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t
-            + 0.254829592)
-            * t
-            * (-x * x).exp();
-    sign * y
+    use statrs::distribution::{ContinuousCDF, Normal};
+    Normal::standard().cdf(z)
 }
 
 #[cfg(test)]

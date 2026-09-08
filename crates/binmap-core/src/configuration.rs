@@ -6,6 +6,7 @@
 
 use crate::config::{BuildStd, DebugInfo, Lto, OptLevel, PanicStrategy, Strip, SweepMatrix};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// A configuration cargo can be asked to build.
 ///
@@ -67,11 +68,52 @@ impl BuildConfiguration {
         }
     }
 
-    /// The `--config` arguments that put this configuration into effect
-    /// without editing the user's `Cargo.toml`.
+    /// The environment that puts this configuration into effect without
+    /// editing the user's `Cargo.toml`.
     ///
-    /// Nothing in a sweep writes to the user's manifest. Applying a
-    /// configuration is a separate, tier-gated act.
+    /// This is the primary mechanism (TOOLING §3.2). Cargo reads profile
+    /// settings from `CARGO_PROFILE_<PROFILE>_<SETTING>`, uppercased with
+    /// hyphens as underscores, and the consequences are what make a sweep
+    /// tractable: it is a loop over environment maps, the working tree is
+    /// never modified, runs parallelise across distinct target directories,
+    /// and cancellation leaves nothing to clean up.
+    ///
+    /// Values are unquoted here, unlike their TOML spellings — `lto=fat`, not
+    /// `lto="fat"`.
+    pub fn cargo_profile_env(&self) -> BTreeMap<String, String> {
+        let mut env = BTreeMap::new();
+        let mut set = |setting: &str, value: String| {
+            env.insert(format!("CARGO_PROFILE_RELEASE_{}", setting.replace('-', "_").to_uppercase()), value);
+        };
+        if let Some(v) = self.opt_level {
+            set("opt-level", v.to_string());
+        }
+        if let Some(v) = self.lto {
+            set("lto", v.to_string());
+        }
+        if let Some(v) = self.codegen_units {
+            set("codegen-units", v.to_string());
+        }
+        if let Some(v) = self.panic {
+            set("panic", v.to_string());
+        }
+        if let Some(v) = self.strip {
+            set("strip", v.to_string());
+        }
+        if let Some(v) = self.debug {
+            set("debug", v.to_string());
+        }
+        if let Some(v) = self.overflow_checks {
+            set("overflow-checks", v.to_string());
+        }
+        env
+    }
+
+    /// The same settings as `--config` arguments.
+    ///
+    /// TOOLING §3.2 records both mechanisms. The environment is what the sweep
+    /// uses; this exists because it is what a user reproduces a result with by
+    /// hand, and it appears beside every point in the Profile Lab.
     pub fn cargo_config_args(&self) -> Vec<String> {
         let mut args = Vec::new();
         let mut push = |key: &str, value: String| {
@@ -275,6 +317,29 @@ mod tests {
     fn an_unset_axis_says_nothing_to_cargo() {
         assert!(BuildConfiguration::default().cargo_config_args().is_empty());
         assert_eq!(BuildConfiguration::default().name(), "profile-default");
+    }
+
+    #[test]
+    fn the_environment_spells_settings_the_way_cargo_reads_them() {
+        // TOOLING §3.2 flags the naming edge cases: opt-level becomes
+        // OPT_LEVEL, and env values are unquoted where TOML values are not.
+        let configuration = BuildConfiguration {
+            opt_level: Some(OptLevel::SizeNoLoopVec),
+            lto: Some(Lto::Fat),
+            codegen_units: Some(1),
+            ..BuildConfiguration::default()
+        };
+        let env = configuration.cargo_profile_env();
+        assert_eq!(env.get("CARGO_PROFILE_RELEASE_OPT_LEVEL").map(String::as_str), Some("z"));
+        assert_eq!(env.get("CARGO_PROFILE_RELEASE_LTO").map(String::as_str), Some("fat"));
+        assert_eq!(env.get("CARGO_PROFILE_RELEASE_CODEGEN_UNITS").map(String::as_str), Some("1"));
+        // Unset axes say nothing, so the profile's own value stands.
+        assert!(!env.contains_key("CARGO_PROFILE_RELEASE_PANIC"));
+    }
+
+    #[test]
+    fn the_baseline_sets_no_environment_at_all() {
+        assert!(BuildConfiguration::default_release().cargo_profile_env().is_empty());
     }
 
     #[test]

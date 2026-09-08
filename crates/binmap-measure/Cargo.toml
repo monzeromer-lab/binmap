@@ -12,3 +12,6 @@ binmap-core = { workspace = true }
 binmap-verify = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+object = { workspace = true }
+statrs = { workspace = true }
+tempfile = { workspace = true }

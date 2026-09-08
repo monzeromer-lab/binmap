@@ -1,0 +1,49 @@
+# cargo-deny — the architectural boundary, enforced (DESIGN-GUI §4, TOOLING §6).
+#
+# §2.4's rule is that the interface may not compute. The crate split makes that
+# true today; this file is what keeps it true when a contributor adds one
+# convenient dependency at 2am. Run in CI:
+#
+#     cargo deny check bans
+
+[graph]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+
+# The ban that matters. binmap-gui renders; it does not analyse. It reaches
+# analyses through binmap_core::facade::Engine and must not be able to reach
+# them any other way — so it may not depend on a crate that has one.
+#
+# The only crate permitted to name both binmap-gui and binmap-build is the
+# binmap binary, which exists to wire one to the other and does nothing else.
+[[bans.deny]]
+name = "binmap-build"
+wrappers = ["binmap", "binmap-eval"]
+
+[[bans.deny]]
+name = "binmap-measure"
+wrappers = ["binmap", "binmap-build", "binmap-eval"]
+
+[[bans.deny]]
+name = "binmap-verify"
+wrappers = ["binmap", "binmap-build", "binmap-measure", "binmap-eval"]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+
+[advisories]
+yanked = "deny"

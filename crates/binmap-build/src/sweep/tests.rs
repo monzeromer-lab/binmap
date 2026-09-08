@@ -108,14 +108,14 @@ fn passing_gates() -> GatePlan {
 }
 
 struct Fixture {
-    _directory: tempdir::TempDir,
+    _directory: tempfile::TempDir,
     runner: ToolRunner,
     store: EvidenceStore,
     path: PathBuf,
 }
 
 fn fixture() -> Fixture {
-    let directory = tempdir::TempDir::new();
+    let directory = tempfile::tempdir().expect("a temporary directory");
     let store = EvidenceStore::new();
     let runner = ToolRunner::new(store.clone(), directory.path());
     let path = directory.path().to_path_buf();
@@ -381,37 +381,4 @@ fn the_state_round_trips_so_a_sweep_survives_the_session() {
     let restored: SweepState = serde_json::from_str(&json).unwrap();
     assert_eq!(state, restored);
     assert!(restored.remaining().is_empty());
-}
-
-/// A temporary directory that removes itself, so the sweep tests do not leave
-/// artifacts behind. Small enough not to warrant a dependency.
-mod tempdir {
-    use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-    pub struct TempDir(PathBuf);
-
-    impl TempDir {
-        pub fn new() -> Self {
-            let serial = COUNTER.fetch_add(1, Ordering::SeqCst);
-            let path = std::env::temp_dir().join(format!(
-                "binmap-sweep-{}-{serial}",
-                std::process::id()
-            ));
-            std::fs::create_dir_all(&path).expect("a temporary directory");
-            Self(path)
-        }
-
-        pub fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
 }
