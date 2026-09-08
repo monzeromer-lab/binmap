@@ -138,7 +138,7 @@ pub enum Request {
     /// Verify a proposal through the five gates without applying it.
     Verify { proposal: String },
     /// Write a verified proposal into the working tree. Requires
-    /// [`TrustTier::Apply`](crate::config::TrustTier::Apply).
+    /// [`TrustTier::Tune`](crate::config::TrustTier::Tune).
     Apply { proposal: String },
 }
 

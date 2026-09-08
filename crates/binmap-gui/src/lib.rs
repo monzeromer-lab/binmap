@@ -14,5 +14,7 @@
 //! scripted events and no window.
 
 pub mod state;
+pub mod theme;
 
 pub use state::{AppState, NavEntry, RunProgress, View};
+pub use theme::{Appearance, Colours, Theme};

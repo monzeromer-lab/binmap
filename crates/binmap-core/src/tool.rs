@@ -236,12 +236,12 @@ mod tests {
             .register(ToolSpec::writes(
                 "apply_patch",
                 "Write a verified patch into the working tree.",
-                TrustTier::Apply,
+                TrustTier::Tune,
             ))
             .unwrap();
         let error = registry.authorize("apply_patch", TrustTier::Propose).unwrap_err();
         assert!(matches!(error, Error::TierTooLow { .. }));
-        assert!(registry.authorize("apply_patch", TrustTier::Apply).is_ok());
+        assert!(registry.authorize("apply_patch", TrustTier::Tune).is_ok());
     }
 
     #[test]

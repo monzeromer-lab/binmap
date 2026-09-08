@@ -5,26 +5,35 @@ use std::path::PathBuf;
 
 /// What the application is allowed to do without asking again.
 ///
-/// Ordered, so "requires at least" is a comparison. Raising the tier is always
-/// a deliberate act by the user: an action above the current tier asks for the
-/// raise, names the gates it will run, and states what it will write (`U9`).
+/// One dial with four settings, always visible and never raised silently
+/// (`U9`). The words and their effects are the design's, not ours:
+///
+/// | Tier | Effect |
+/// |---|---|
+/// | Observe | Measures and explains, and writes nothing. |
+/// | Propose | Generates diffs and never applies them. **The default.** |
+/// | Tune | Writes build configuration only, after the tests pass and the benchmark confirms. |
+/// | Autonomous | Applies source patches and opens a pull request. |
+///
+/// Ordered, so "requires at least" is a comparison.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TrustTier {
-    /// Read the project, run measurements, write nothing outside our own
-    /// target directory. The default, and enough for the whole of Phase 0's
-    /// analysis.
-    #[default]
+    /// Read the project and measure it. Writes nothing at all.
     Observe,
-    /// Additionally: generate patches and show their diffs. Still writes
-    /// nothing to the user's tree.
+    /// Additionally: generate patches and show their diffs, and never apply
+    /// them. This is the default — the tool is useful without ever writing,
+    /// and starting here means the first write is always a decision.
+    #[default]
     Propose,
-    /// Additionally: write an approved change into the working tree, having
-    /// run the gates first.
-    Apply,
-    /// Additionally: commit. Never the default, and never reached by
-    /// inference — `N7`.
-    Commit,
+    /// Additionally: write build configuration — `[profile.release]` and
+    /// nothing else — and only after the tests pass and the benchmark
+    /// confirms. Source is not touched at this tier.
+    Tune,
+    /// Additionally: apply source patches and open a pull request. Never
+    /// reached by inference (`N7`), and additionally gated by
+    /// `allow_source_patches = true` in the project's `binmap.toml`.
+    Autonomous,
 }
 
 impl TrustTier {
@@ -32,25 +41,43 @@ impl TrustTier {
         match self {
             TrustTier::Observe => "Observe",
             TrustTier::Propose => "Propose",
-            TrustTier::Apply => "Apply",
-            TrustTier::Commit => "Commit",
+            TrustTier::Tune => "Tune",
+            TrustTier::Autonomous => "Autonomous",
         }
     }
 
     /// The tier's own description of what it permits, as the tier dialog shows
-    /// it. Written as a sentence because a user deciding whether to raise a
-    /// tier needs a sentence, not a permission bit.
+    /// it. A user deciding whether to raise a tier needs a sentence, not a
+    /// permission bit.
     pub fn permits(self) -> &'static str {
         match self {
-            TrustTier::Observe => "Read the project and measure it. Writes only to Binmap's own target directory.",
-            TrustTier::Propose => "Also generate patches and show their diffs. Your working tree is not touched.",
-            TrustTier::Apply => "Also write an approved change into your working tree, after the gates pass.",
-            TrustTier::Commit => "Also commit approved changes. Nothing reaches this tier on its own.",
+            TrustTier::Observe => "Observe measures and explains, and writes nothing.",
+            TrustTier::Propose => {
+                "Propose generates diffs and never applies them. This is the default."
+            }
+            TrustTier::Tune => {
+                "Tune writes build configuration only, after the tests pass and the benchmark \
+                 confirms."
+            }
+            TrustTier::Autonomous => {
+                "Autonomous applies source patches and opens a pull request. It also requires \
+                 allow_source_patches = true in binmap.toml."
+            }
         }
     }
 
     pub const ALL: [TrustTier; 4] =
-        [TrustTier::Observe, TrustTier::Propose, TrustTier::Apply, TrustTier::Commit];
+        [TrustTier::Observe, TrustTier::Propose, TrustTier::Tune, TrustTier::Autonomous];
+
+    /// Where the tier sits on the dial, 0 to 3.
+    pub fn rank(self) -> u8 {
+        match self {
+            TrustTier::Observe => 0,
+            TrustTier::Propose => 1,
+            TrustTier::Tune => 2,
+            TrustTier::Autonomous => 3,
+        }
+    }
 
     /// Check an action against the session's tier, producing the error that
     /// states the reason rather than making the action disappear.
@@ -58,11 +85,7 @@ impl TrustTier {
         if self >= required {
             Ok(())
         } else {
-            Err(crate::Error::TierTooLow {
-                action: action.to_string(),
-                required,
-                current: self,
-            })
+            Err(crate::Error::TierTooLow { action: action.to_string(), required, current: self })
         }
     }
 }
@@ -275,10 +298,26 @@ mod tests {
 
     #[test]
     fn a_blocked_action_states_its_reason() {
-        let error = TrustTier::Observe.require(TrustTier::Apply, "write Cargo.toml").unwrap_err();
+        let error = TrustTier::Observe.require(TrustTier::Tune, "write Cargo.toml").unwrap_err();
         let message = error.to_string();
         assert!(message.contains("write Cargo.toml"), "{message}");
-        assert!(message.contains("Apply") && message.contains("Observe"), "{message}");
+        assert!(message.contains("Tune") && message.contains("Observe"), "{message}");
+    }
+
+    #[test]
+    fn the_dial_reads_the_way_the_design_labels_it() {
+        assert_eq!(
+            TrustTier::ALL.map(TrustTier::label),
+            ["Observe", "Propose", "Tune", "Autonomous"]
+        );
+        assert_eq!(TrustTier::ALL.map(TrustTier::rank), [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn propose_is_the_default_so_the_first_write_is_always_a_decision() {
+        assert_eq!(TrustTier::default(), TrustTier::Propose);
+        // And the default cannot write build configuration.
+        assert!(TrustTier::default().require(TrustTier::Tune, "apply").is_err());
     }
 
     #[test]

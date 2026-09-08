@@ -35,11 +35,13 @@ fn opening_something_that_is_not_a_project_fails_by_path() {
 }
 
 #[test]
-fn the_engine_starts_at_the_lowest_tier_and_only_moves_when_told() {
+fn the_engine_starts_at_propose_and_only_moves_when_told() {
+    // Propose is the design's default: the tool is useful without ever
+    // writing, so the first write is always a decision.
     let engine = engine();
-    assert_eq!(engine.trust_tier(), TrustTier::Observe);
-    engine.set_trust_tier(TrustTier::Apply);
-    assert_eq!(engine.trust_tier(), TrustTier::Apply);
+    assert_eq!(engine.trust_tier(), TrustTier::Propose);
+    engine.set_trust_tier(TrustTier::Tune);
+    assert_eq!(engine.trust_tier(), TrustTier::Tune);
 }
 
 #[test]
