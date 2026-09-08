@@ -382,3 +382,144 @@ fn the_state_round_trips_so_a_sweep_survives_the_session() {
     assert_eq!(state, restored);
     assert!(restored.remaining().is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Regression proofs for defects the Phase 0 audit found.
+//
+// Each of these fails against the code as audited. They are written first, so
+// the fix has something to satisfy and cannot quietly half-land.
+// ---------------------------------------------------------------------------
+
+/// The gates must verify the configuration under test, not default release.
+///
+/// The sweep builds each candidate with `CARGO_PROFILE_RELEASE_*` in the
+/// environment, then hands the harness one shared `GatePlan` that carries
+/// none of it. So "builds and tests pass" is asserted about a plain
+/// `cargo build --release` — every candidate in a ninety-six point sweep is
+/// gated on the same baseline build, and the winning configuration's tests
+/// were never run.
+#[test]
+fn every_gate_runs_under_the_configuration_it_is_judging() {
+    let fixture = fixture();
+    let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000);
+
+    // A gate command that reports which optimisation level it was run under.
+    // If the sweep threads the candidate's environment through, each
+    // configuration's gate output differs; if it does not, they are identical.
+    let plan = GatePlan::new(shell(
+        "echo \"gated at opt-level=${CARGO_PROFILE_RELEASE_OPT_LEVEL:-unset}\"",
+    ))
+    .testing_with(shell("true"));
+
+    let sweep = Sweep {
+        builder: &builder,
+        runner: &fixture.runner,
+        benchmark: None,
+        options: SweepOptions::new(plan),
+    };
+
+    let matrix = small_matrix();
+    let mut state = state_for(&matrix);
+    sweep.run(&target(), &mut state, &RecordedEvents::new(), &Cancellation::new()).unwrap();
+
+    // Collect what each configuration's Builds gate actually saw.
+    let mut seen: Vec<String> = Vec::new();
+    for measured in &state.measured {
+        let builds = measured.report.outcome(Gate::Builds).expect("every candidate is gated");
+        for id in &builds.evidence {
+            if let Some(record) = fixture.store.get(id) {
+                if let Some(line) = record.output.lines().find(|l| l.starts_with("gated at")) {
+                    seen.push(format!("{}: {}", measured.name, line));
+                }
+            }
+        }
+    }
+
+    assert!(!seen.is_empty(), "no gate recorded what it was run under");
+
+    let distinct: std::collections::BTreeSet<&str> =
+        seen.iter().map(|line| line.split(": ").nth(1).unwrap_or("")).collect();
+    assert!(
+        distinct.len() > 1,
+        "every candidate was gated under the same build — the gates verified default release, \
+         not the configuration under test. Saw only: {distinct:?}"
+    );
+    assert!(
+        !distinct.contains("gated at opt-level=unset"),
+        "at least one candidate was gated with no profile environment at all: {seen:?}"
+    );
+}
+
+/// A candidate that fails its tests *only under its own configuration* must be
+/// rejected.
+///
+/// This is the acceptance criterion's "with tests passing" clause. If the
+/// gates run default release, a configuration that breaks the suite — say,
+/// `overflow-checks` changing behaviour, or `panic=abort` breaking a
+/// `#[should_panic]` test — passes anyway, and the tool recommends it.
+#[test]
+fn a_configuration_whose_tests_only_fail_under_itself_is_rejected() {
+    let fixture = fixture();
+    let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000);
+
+    // Fails only when built at opt-level=s, which is exactly the shape of a
+    // configuration-dependent test failure.
+    let plan = GatePlan::new(shell("true")).testing_with(shell(
+        "if [ \"${CARGO_PROFILE_RELEASE_OPT_LEVEL:-}\" = \"s\" ]; then echo 'failures:'; exit 101; fi",
+    ));
+
+    let sweep = Sweep {
+        builder: &builder,
+        runner: &fixture.runner,
+        benchmark: None,
+        options: SweepOptions::new(plan),
+    };
+
+    let matrix = small_matrix();
+    let mut state = state_for(&matrix);
+    sweep.run(&target(), &mut state, &RecordedEvents::new(), &Cancellation::new()).unwrap();
+
+    let size_optimised: Vec<&MeasuredConfiguration> = state
+        .measured
+        .iter()
+        .filter(|m| m.configuration.opt_level == Some(binmap_core::config::OptLevel::Size))
+        .collect();
+    assert!(!size_optimised.is_empty(), "the matrix should contain opt-level=s points");
+
+    for measured in size_optimised {
+        assert_eq!(
+            measured.report.rejected_by(),
+            Some(Gate::TestsPass),
+            "{} broke the suite under its own configuration and was not rejected",
+            measured.name
+        );
+    }
+}
+
+/// Per-configuration size is measured per section and then discarded.
+///
+/// F0.4 asks for "total and per-section size" per configuration. The sweep
+/// reads the section table, uses it for the total, and keeps nothing — so the
+/// Size Explorer and the design's section breakdown have no source.
+#[test]
+fn per_configuration_section_sizes_survive_the_sweep() {
+    let fixture = fixture();
+    let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000);
+    let sweep = Sweep {
+        builder: &builder,
+        runner: &fixture.runner,
+        benchmark: None,
+        options: SweepOptions::new(passing_gates()),
+    };
+
+    let matrix = small_matrix();
+    let mut state = state_for(&matrix);
+    sweep.run(&target(), &mut state, &RecordedEvents::new(), &Cancellation::new()).unwrap();
+
+    let measured = state.measured.first().expect("at least one configuration");
+    assert!(
+        measured.sections.is_some(),
+        "F0.4 asks for per-section size per configuration; the sweep measures it and \
+         throws it away"
+    );
+}

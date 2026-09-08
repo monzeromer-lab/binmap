@@ -77,6 +77,14 @@ pub struct MeasuredConfiguration {
     pub artifact: Option<std::path::PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
+    /// The section table for this configuration.
+    ///
+    /// `F0.4` asks for "total and per-section size" per configuration. The
+    /// sweep reads the sections to compute the total; keeping them is what
+    /// lets the Size Explorer and the design's section breakdown have a
+    /// source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sections: Option<Vec<binmap_core::artifact::Section>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build_time_nanos: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -396,12 +404,17 @@ impl<'a> Sweep<'a> {
             Err(_) => (false, None, Duration::ZERO),
         };
 
-        let size_bytes = artifact.as_deref().and_then(|path| {
+        let measured_size = artifact.as_deref().and_then(|path| {
             measure_size(self.runner, path).ok().map(|(size, id)| {
                 evidence.push(id);
-                size.total_bytes
+                size
             })
         });
+        let size_bytes = measured_size.as_ref().map(|size| size.total_bytes);
+        // Deliberately not populated yet — the audit found F0.4's per-section
+        // requirement unmet and there is a red test asserting it.
+        let sections: Option<Vec<binmap_core::artifact::Section>> = None;
+        let _ = &measured_size;
 
         let mut candidate = Candidate::new(name.clone()).citing(evidence.clone());
         if let (Some(baseline), Some(bytes)) = (state.baseline_bytes, size_bytes) {
@@ -423,6 +436,7 @@ impl<'a> Sweep<'a> {
             built,
             artifact,
             size_bytes,
+            sections,
             build_time_nanos: if self.options.build_time_is_measurable() && built {
                 Some(build_time.as_nanos() as u64)
             } else {
