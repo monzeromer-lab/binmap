@@ -21,6 +21,7 @@ pub mod event;
 pub mod facade;
 pub mod finding;
 pub mod location;
+pub mod tool;
 pub mod traits;
 
 pub use error::{Error, Result};
@@ -35,4 +36,5 @@ pub use configuration::BuildConfiguration;
 pub use event::{Cancellation, EngineEvent, EventSink, RunId};
 pub use facade::{Engine, Probe, ProbeStatus, Proposal, Request};
 pub use finding::FindingDraft;
+pub use tool::{ToolRegistry, ToolRunner, ToolSpec};
 pub use traits::{ArtifactReader, BuildSystem, MeasurementSource, Symbolizer, Target, TargetFamily};

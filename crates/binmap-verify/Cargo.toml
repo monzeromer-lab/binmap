@@ -1,5 +1,6 @@
 [package]
 name = "binmap-verify"
+description = "The five gates, applied to every proposal whoever produced it"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
