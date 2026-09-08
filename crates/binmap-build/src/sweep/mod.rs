@@ -164,9 +164,14 @@ impl SweepState {
 
     /// The indices of the measured configurations on the Pareto frontier,
     /// smallest-first.
+    ///
+    /// Judged against this machine's measured noise floor where one was
+    /// established: a runtime difference smaller than the machine invents on
+    /// its own must not decide which configuration the user is shown.
     pub fn frontier(&self) -> Vec<usize> {
         let points: Vec<Point> = self.measured.iter().map(MeasuredConfiguration::point).collect();
-        pareto::frontier_by_size(&points)
+        let noise = self.noise_floor.as_ref().map(|floor| floor.relative).unwrap_or(0.0);
+        pareto::frontier_by_size_within(&points, noise)
     }
 
     /// The best size against the baseline, as a fraction. `0.25` is the
