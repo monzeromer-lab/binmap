@@ -35,7 +35,7 @@ pub use capability::{Capabilities, Capability};
 pub use config::{ProjectConfig, SweepMatrix, TrustTier};
 pub use configuration::BuildConfiguration;
 pub use event::{Cancellation, EngineEvent, EventSink, RunId};
-pub use facade::{Engine, Probe, ProbeStatus, Proposal, Request};
+pub use facade::{Engine, Measurement, Probe, ProbeStatus, Proposal, Request, SweepSummary};
 pub use finding::FindingDraft;
 pub use gate::{Gate, GateOutcome, GateResult, VerificationReport};
 pub use tool::{ToolRegistry, ToolRunner, ToolSpec};

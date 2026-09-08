@@ -110,6 +110,95 @@ impl ProbeStatus {
     }
 }
 
+/// One configuration, measured, as the Profile Lab renders it.
+///
+/// The engine held all of this and exposed none of it, so the interface had no
+/// source for its table, its scatter or its noise-floor line. Everything here
+/// is a measurement or a conclusion drawn from one; nothing is presentation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Measurement {
+    /// The configuration's stable name, and the row's identity.
+    pub id: String,
+    /// The flags, as a user would read them.
+    pub flags: String,
+    /// The axes this configuration set, for the selected-configuration panel.
+    pub settings: Vec<(String, String)>,
+    /// `None` when the candidate did not build.
+    pub size_bytes: Option<u64>,
+    /// Against the baseline. Negative is smaller.
+    pub size_delta: Option<i64>,
+    /// `None` when no benchmark is declared — which is different from fast.
+    pub runtime_nanos: Option<u64>,
+    /// `None` when the sweep built concurrently and wall-clock time therefore
+    /// measured the machine's load rather than the configuration.
+    pub build_time_nanos: Option<u64>,
+    pub gates: crate::gate::VerificationReport,
+    /// Derived by Pareto dominance, against the machine's noise floor. Never
+    /// flagged by whatever produced the point.
+    pub on_frontier: bool,
+    pub built: bool,
+}
+
+impl Measurement {
+    pub fn passed(&self) -> bool {
+        self.gates.passed()
+    }
+
+    /// The gate that rejected it, for the table's Gates column.
+    pub fn rejected_by(&self) -> Option<crate::gate::Gate> {
+        self.gates.rejected_by()
+    }
+}
+
+/// One sweep, and everything the Profile Lab needs to draw it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SweepSummary {
+    pub run: crate::event::RunId,
+    pub target: String,
+    /// What `cargo build --release` produces with no help from us. Every delta
+    /// is against this.
+    pub baseline_bytes: Option<u64>,
+    /// How much this machine varies on its own, as a fraction.
+    ///
+    /// Shown beside every timing number rather than kept as an internal
+    /// threshold: a user comparing two numbers deserves to know how far apart
+    /// they have to be before the comparison means anything.
+    pub noise_floor: Option<f64>,
+    pub noise_floor_samples: usize,
+    pub measured: Vec<Measurement>,
+    pub complete: bool,
+}
+
+impl SweepSummary {
+    pub fn frontier(&self) -> impl Iterator<Item = &Measurement> {
+        self.measured.iter().filter(|m| m.on_frontier)
+    }
+
+    pub fn rejected(&self) -> usize {
+        self.measured.iter().filter(|m| !m.passed()).count()
+    }
+
+    /// The noise floor as the interface states it: "0.9%".
+    pub fn noise_floor_label(&self) -> Option<String> {
+        self.noise_floor.map(|floor| format!("{:.1}%", floor * 100.0))
+    }
+
+    /// The best size against the baseline, as a fraction.
+    pub fn best_reduction(&self) -> Option<f64> {
+        let baseline = self.baseline_bytes? as f64;
+        if baseline == 0.0 {
+            return None;
+        }
+        let best = self
+            .measured
+            .iter()
+            .filter(|m| m.passed() && m.built)
+            .filter_map(|m| m.size_bytes)
+            .min()? as f64;
+        Some((baseline - best) / baseline)
+    }
+}
+
 /// A change the user may apply, and everything they need to decide.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Proposal {
@@ -172,6 +261,26 @@ pub trait Engine: Send + Sync {
 
     /// The proposals currently on offer.
     fn proposals(&self) -> Vec<Proposal>;
+
+    /// Read back what a previous session on this target measured.
+    ///
+    /// Returns how many runs were adopted. This is `U13`'s import half, which
+    /// had no entry point at all: an hour-long sweep died with the window.
+    /// Findings arrive already revalidated — import re-runs the grounding
+    /// check and re-applies the provenance ceiling — so a hand-edited
+    /// artifact cannot inject a claim.
+    fn restore_session(&self, target: &str) -> usize;
+
+    /// Every sweep this session has run or restored.
+    ///
+    /// The Profile Lab's whole source. The engine held the measurements and
+    /// exposed none of them, so the table, the scatter and the noise-floor
+    /// line had nothing to read.
+    fn sweeps(&self) -> Vec<SweepSummary>;
+
+    /// The session's trust tier, so the title bar cannot show one the engine
+    /// is not actually running at.
+    fn trust_tier(&self) -> crate::config::TrustTier;
 
     /// Turn a frontier point into a `Cargo.toml` edit, without writing
     /// anything. Writing it is a separate, tier-gated [`Request::Apply`].

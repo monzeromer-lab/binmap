@@ -17,6 +17,7 @@ serde_json = { workspace = true }
 cargo_metadata = { workspace = true }
 toml_edit = { workspace = true }
 similar = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

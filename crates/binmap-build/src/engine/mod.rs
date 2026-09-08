@@ -17,7 +17,7 @@ use binmap_core::configuration::BuildConfiguration;
 use binmap_core::error::{Error, Result};
 use binmap_core::event::{Cancellation, EngineEvent, EventSink, RunId};
 use binmap_core::evidence::{Evidence, EvidenceStore};
-use binmap_core::facade::{Engine, Probe, Proposal, Request};
+use binmap_core::facade::{Engine, Measurement, Probe, Proposal, Request, SweepSummary};
 use binmap_core::finding::Finding;
 use binmap_core::tool::ToolRunner;
 use binmap_core::traits::{BuildSystem, MeasurementSource, Target};
@@ -111,10 +111,6 @@ impl BinmapEngine {
 
     pub fn evidence_store(&self) -> &EvidenceStore {
         self.inner.runner.store()
-    }
-
-    pub fn trust_tier(&self) -> TrustTier {
-        self.inner.config.read().expect("config poisoned").trust_tier
     }
 
     /// Raise or lower the tier. Always a deliberate act by the user, which is
@@ -348,6 +344,56 @@ impl Inner {
     }
 }
 
+/// Turn a sweep's state into what the Profile Lab reads.
+///
+/// The frontier is derived here rather than stored, so it cannot drift from
+/// the measurements it is derived from — and it is derived against the
+/// machine's measured noise floor, so a difference the machine invented does
+/// not decide which configuration is shown.
+fn summarise(state: &SweepState) -> SweepSummary {
+    let frontier: std::collections::BTreeSet<usize> = state.frontier().into_iter().collect();
+
+    let measured = state
+        .measured
+        .iter()
+        .enumerate()
+        .map(|(index, m)| Measurement {
+            id: m.name.clone(),
+            flags: m.configuration.describe(),
+            settings: m
+                .configuration
+                .settings()
+                .into_iter()
+                .map(|(axis, value)| (axis.to_string(), value))
+                .collect(),
+            size_bytes: m.size_bytes,
+            size_delta: match (state.baseline_bytes, m.size_bytes) {
+                (Some(baseline), Some(bytes)) => Some(bytes as i64 - baseline as i64),
+                _ => None,
+            },
+            runtime_nanos: m.runtime_nanos,
+            build_time_nanos: m.build_time_nanos,
+            gates: m.report.clone(),
+            on_frontier: frontier.contains(&index),
+            built: m.built,
+        })
+        .collect();
+
+    SweepSummary {
+        run: state.run.clone(),
+        target: state.target.clone(),
+        baseline_bytes: state.baseline_bytes,
+        noise_floor: state.noise_floor.as_ref().map(|floor| floor.relative),
+        noise_floor_samples: state
+            .noise_floor
+            .as_ref()
+            .map(|floor| floor.samples.len())
+            .unwrap_or(0),
+        measured,
+        complete: state.complete,
+    }
+}
+
 /// Passes events through while keeping the findings, so the engine can answer
 /// [`Engine::findings`] for a view that opened after the run began.
 struct FindingCollector<'a> {
@@ -435,6 +481,26 @@ impl Engine for BinmapEngine {
             return Vec::new();
         };
         finding.evidence().iter().filter_map(|id| self.inner.runner.store().get(id)).collect()
+    }
+
+    fn restore_session(&self, target: &str) -> usize {
+        // A session that cannot be read is worth saying so about, but it is
+        // not worth refusing to open the project over.
+        match self.restore(target) {
+            Ok(runs) => runs,
+            Err(error) => {
+                tracing::warn!("could not restore the session for {target}: {error}");
+                0
+            }
+        }
+    }
+
+    fn sweeps(&self) -> Vec<SweepSummary> {
+        self.inner.runs.lock().expect("runs poisoned").values().map(summarise).collect()
+    }
+
+    fn trust_tier(&self) -> TrustTier {
+        self.inner.config.read().expect("config poisoned").trust_tier
     }
 
     fn proposals(&self) -> Vec<Proposal> {

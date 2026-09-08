@@ -14,6 +14,7 @@ use crate::theme::{Appearance, Theme, space};
 use crate::views::chrome::{NavRail, StatusBar, TitleBar};
 use crate::views::environment::EnvironmentPanel;
 use crate::views::inspector::{Inspector, Tab};
+use crate::views::profile_lab::ProfileLab;
 use crate::views::targets::{TargetList, TargetView};
 use binmap_core::event::{Cancellation, EngineEvent, EventSink, RunId};
 use binmap_core::facade::{Engine, Request};
@@ -50,6 +51,10 @@ pub struct Binmap {
     /// The run in flight, so it can be cancelled. A sweep the user cannot stop
     /// is a hostile tool.
     active: Option<(RunId, Cancellation)>,
+    /// Which row of the Profile Lab is open. `None` selects the frontier's
+    /// first point, so the panel is never empty when there is something to
+    /// show.
+    selected_configuration: Option<String>,
 }
 
 impl Binmap {
@@ -67,6 +72,25 @@ impl Binmap {
             state.set_targets(targets);
         }
         state.select_view(View::Target);
+
+        // Whatever the last session on this target measured. A tool that
+        // forgets an hour-long sweep because a window closed is a tool people
+        // run twice.
+        let restored = match state.selected_target().map(|target| target.id.clone()) {
+            Some(id) => engine.restore_session(&id),
+            None => 0,
+        };
+        for finding in engine.findings() {
+            state.apply(EngineEvent::Finding {
+                run: RunId("restored".into()),
+                finding: Box::new(finding),
+            });
+        }
+        // Land where the restored work is. Someone reopening a project after a
+        // sweep wants the sweep, not the target list they already chose from.
+        if restored > 0 {
+            state.select_view(View::Tune);
+        }
 
         // Drain the channel on the foreground. Every applied event notifies,
         // which is the repaint request.
@@ -103,6 +127,7 @@ impl Binmap {
             events,
             sender,
             active: None,
+            selected_configuration: None,
         }
     }
 
@@ -158,6 +183,12 @@ impl Binmap {
         if self.state.select_view(view) {
             cx.notify();
         }
+    }
+
+    /// Open one configuration in the Profile Lab's selected panel.
+    pub fn select_configuration(&mut self, id: impl Into<String>, cx: &mut Context<Self>) {
+        self.selected_configuration = Some(id.into());
+        cx.notify();
     }
 
     pub fn select_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
@@ -217,6 +248,19 @@ impl Render for Binmap {
                                 Some(View::Environment) => {
                                     EnvironmentPanel::of(&self.state, theme).into_any_element()
                                 }
+                                Some(View::Tune) => ProfileLab::new(
+                                    // The most recent sweep for the selected
+                                    // target. The engine derives the frontier;
+                                    // this only draws what it is told.
+                                    self.engine.sweeps().into_iter().rfind(|sweep| {
+                                        self.state
+                                            .selected_target()
+                                            .is_none_or(|t| sweep.target == t.id)
+                                    }),
+                                    self.selected_configuration.clone(),
+                                    theme,
+                                )
+                                .into_any_element(),
                                 _ => TargetView::of(&self.state, self.root.clone(), theme)
                                     .into_any_element(),
                             },
@@ -240,9 +284,7 @@ impl Binmap {
     /// Read through the facade rather than held here, so the title bar cannot
     /// show a tier the engine is not actually running at.
     fn engine_tier(&self) -> binmap_core::config::TrustTier {
-        // The facade does not expose the tier yet; until it does, the frame
-        // shows the default rather than inventing one.
-        binmap_core::config::TrustTier::default()
+        self.engine.trust_tier()
     }
 }
 

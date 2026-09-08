@@ -8,6 +8,7 @@
 pub mod chrome;
 pub mod environment;
 pub mod inspector;
+pub mod profile_lab;
 pub mod targets;
 
 pub use chrome::{NavRail, StatusBar, TitleBar};
