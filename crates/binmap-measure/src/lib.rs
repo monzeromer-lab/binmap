@@ -7,6 +7,7 @@
 //! an explicit `Inconclusive` variant rather than a number the caller might
 //! round in its own favour.
 
+pub mod benchmark;
 pub mod bloaty;
 pub mod hyperfine;
 pub mod pareto;
@@ -14,6 +15,7 @@ pub mod sections;
 pub mod size;
 pub mod timing;
 
+pub use benchmark::HyperfineBenchmark;
 pub use hyperfine::Timing;
 pub use pareto::{Point, frontier};
 pub use size::measure_size;

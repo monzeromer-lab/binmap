@@ -21,6 +21,7 @@ use binmap_core::facade::{Engine, Probe, Proposal, Request};
 use binmap_core::finding::Finding;
 use binmap_core::tool::ToolRunner;
 use binmap_core::traits::{BuildSystem, MeasurementSource, Target};
+use binmap_measure::HyperfineBenchmark;
 use binmap_session::SessionStore;
 use binmap_session::artifact::{SessionArtifact, TargetMetadata};
 use binmap_verify::GatePlan;
@@ -63,8 +64,17 @@ struct Inner {
 impl BinmapEngine {
     /// Open a project. Discovery runs here, so a caller holding an engine
     /// already knows what the project offers.
+    ///
+    /// If the project declares a benchmark and hyperfine is installed, runtime
+    /// becomes an objective; otherwise it does not, and the frontier ranks on
+    /// what was actually measured. We never invent a workload.
     pub fn open(config: ProjectConfig, gates: GatePlan) -> Result<Self> {
-        Self::open_with(config, gates, None)
+        let benchmark = config.benchmark.clone().and_then(|command| {
+            let runner = ToolRunner::new(EvidenceStore::new(), config.root.clone());
+            HyperfineBenchmark::new(runner, command)
+                .map(|b| Arc::new(b) as Arc<dyn MeasurementSource>)
+        });
+        Self::open_with(config, gates, benchmark)
     }
 
     /// Open a project with the user's benchmark attached. Without one, runtime
