@@ -110,7 +110,10 @@ fn an_export_redacts_and_reports_what_it_changed() {
 }
 
 #[test]
-fn an_exported_artifact_admits_that_its_evidence_was_altered() {
+fn an_exported_session_can_actually_be_opened_by_the_person_it_was_sent_to() {
+    // This is the point of U13, and it was broken: export redacted the output
+    // and kept the old digest, so import refused every record and dropped
+    // every finding as ungrounded. The recipient opened an empty session.
     let temporary = temp_directory();
     let directory = temporary.path();
     let store = SessionStore::new(directory).with_redactor(redactor());
@@ -118,14 +121,50 @@ fn an_exported_artifact_admits_that_its_evidence_was_altered() {
     let path = directory.join("shared.binmap.json");
     store.export(&artifact, &path).unwrap();
 
-    // Reading it back, the digests no longer match — which is correct, and is
-    // exactly how the recipient learns the records were edited rather than
-    // being handed altered evidence that looks pristine.
     let restored = store.read(&path).unwrap();
-    assert!(restored.artifact.redacted.is_some());
-    assert_eq!(restored.tampered_evidence.len(), 1);
+    assert!(restored.tampered_evidence.is_empty(), "a redacted record was refused");
+    assert_eq!(restored.findings.len(), 1, "the finding did not survive the round trip");
+    assert!(restored.refusal_notice().is_none());
+}
+
+#[test]
+fn an_exported_artifact_admits_that_its_evidence_was_altered() {
+    // It opens, and it still says so. A record that was redacted is
+    // re-digested over what it now says — otherwise the session is unreadable
+    // — and keeps the digest it had, which is how the recipient knows the
+    // output is not byte-for-byte what the tool produced.
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory).with_redactor(redactor());
+    let (artifact, _) = session();
+    let path = directory.join("shared.binmap.json");
+    store.export(&artifact, &path).unwrap();
+
+    let restored = store.read(&path).unwrap();
+    assert!(restored.artifact.redacted.is_some(), "the artifact does not admit redaction");
     let described = restored.artifact.redacted.as_ref().unwrap().describe();
     assert!(described.starts_with("Redacted: "), "{described}");
+
+    let altered: Vec<&binmap_core::evidence::Evidence> =
+        restored.artifact.evidence.iter().filter(|e| e.was_redacted()).collect();
+    assert_eq!(altered.len(), 1, "the altered record does not carry its original digest");
+    assert!(altered[0].digest_matches(), "a redacted record must still verify");
+    assert_ne!(altered[0].redacted_from.as_deref(), Some(altered[0].digest.as_str()));
+}
+
+#[test]
+fn a_saved_session_is_not_redacted_because_it_is_the_users_own() {
+    // Redacting the user's own session would make the Evidence tab lie to the
+    // person who produced it.
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory).with_redactor(redactor());
+    let (artifact, _) = session();
+
+    store.save(&artifact).unwrap();
+    let restored = store.load("app::app").unwrap().expect("it was saved");
+    assert!(restored.artifact.evidence.iter().all(|e| !e.was_redacted()));
+    assert!(restored.artifact.evidence[0].output.contains("/home/ada"));
 }
 
 #[test]

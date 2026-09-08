@@ -219,8 +219,14 @@ fn findings_stream_as_they_are_discovered_rather_than_arriving_in_a_batch() {
 #[test]
 fn a_configuration_that_does_not_build_stays_visible_as_a_rejected_candidate() {
     let fixture = fixture();
+    let broken_name = BuildConfiguration {
+        opt_level: Some(OptLevel::Size),
+        lto: Some(Lto::Fat),
+        ..Default::default()
+    }
+    .name();
     let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000)
-        .breaking("ols-lfat");
+        .breaking(&broken_name);
     let sweep = Sweep {
         builder: &builder,
         runner: &fixture.runner,
@@ -235,7 +241,8 @@ fn a_configuration_that_does_not_build_stays_visible_as_a_rejected_candidate() {
     let events = RecordedEvents::new();
     sweep.run(&target(), &mut state, &events, &Cancellation::new()).unwrap();
 
-    let broken = state.measured.iter().find(|m| m.name == "ols-lfat").expect("still in the table");
+    let broken =
+        state.measured.iter().find(|m| m.name == broken_name).expect("still in the table");
     assert!(!broken.built);
     // It has no size, so it cannot reach the frontier — but it was not dropped.
     assert_eq!(broken.size_bytes, None);
@@ -243,7 +250,7 @@ fn a_configuration_that_does_not_build_stays_visible_as_a_rejected_candidate() {
 
     let frontier_names: Vec<&str> =
         state.frontier().into_iter().map(|i| state.measured[i].name.as_str()).collect();
-    assert!(!frontier_names.contains(&"ols-lfat"), "{frontier_names:?}");
+    assert!(!frontier_names.contains(&broken_name.as_str()), "{frontier_names:?}");
 }
 
 #[test]
@@ -343,8 +350,14 @@ fn a_serial_sweep_does_record_build_times() {
 #[test]
 fn the_frontier_finding_is_derived_and_says_which_rule_derived_it() {
     let fixture = fixture();
-    let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000)
-        .sized("ols-lfat", 500);
+    let smallest = BuildConfiguration {
+        opt_level: Some(OptLevel::Size),
+        lto: Some(Lto::Fat),
+        ..Default::default()
+    }
+    .name();
+    let builder =
+        FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000).sized(&smallest, 500);
     let sweep = Sweep {
         builder: &builder,
         runner: &fixture.runner,
@@ -438,11 +451,10 @@ fn every_gate_runs_under_the_configuration_it_is_judging() {
     for measured in &state.measured {
         let builds = measured.report.outcome(Gate::Builds).expect("every candidate is gated");
         for id in &builds.evidence {
-            if let Some(record) = fixture.store.get(id) {
-                if let Some(line) = record.output.lines().find(|l| l.starts_with("gated at")) {
+            if let Some(record) = fixture.store.get(id)
+                && let Some(line) = record.output.lines().find(|l| l.starts_with("gated at")) {
                     seen.push(format!("{}: {}", measured.name, line));
                 }
-            }
         }
     }
 

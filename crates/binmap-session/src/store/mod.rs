@@ -92,10 +92,25 @@ impl SessionStore {
                 evidence.invocation.working_directory =
                     Some(self.redactor.redact(directory, &mut report));
             }
-            // The digest describes what the tool produced, and this is no
-            // longer that. Re-digesting would make an altered record look
-            // untouched; leaving the old digest makes the alteration visible
-            // to anyone who checks, which is the point.
+
+            // Re-digest, and say so.
+            //
+            // Leaving the original digest looked principled — the mismatch
+            // would be visible to anyone who checked — but it made an export
+            // useless: import refuses every record whose digest does not
+            // match, so the recipient opened a session with no evidence and
+            // therefore no findings at all. An artifact that cannot be read is
+            // not a more honest artifact.
+            //
+            // So the record is re-digested over its redacted content, and the
+            // original digest is kept beside it. The recipient can see that a
+            // record was altered, and by how much, and still has a session
+            // they can open. `redacted` on the artifact says the same thing at
+            // the top level.
+            if evidence.digest != evidence.expected_digest() {
+                evidence.redacted_from = Some(evidence.digest.clone());
+                evidence.digest = evidence.expected_digest();
+            }
         }
 
         if let Some(root) = &copy.target.root {

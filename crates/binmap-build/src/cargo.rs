@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 /// Cargo, driven against one project.
 pub struct CargoBuildSystem {
     runner: ToolRunner,
+    /// The target triple, needed by `-Zbuild-std`. Detected from the
+    /// toolchain, because a build-std sweep without one cannot work.
+    host_triple: Option<String>,
     /// Our own target directory. The user's stays untouched, so the
     /// incremental cache they will want back the moment the sweep finishes is
     /// still there.
@@ -33,7 +36,20 @@ impl CargoBuildSystem {
         } else {
             runner.root().join(target_directory)
         };
-        Self { runner, target_directory }
+        let host_triple = Self::host_triple(&runner);
+        Self { runner, target_directory, host_triple }
+    }
+
+    /// Ask rustc what it builds for. `-Zbuild-std` needs an explicit
+    /// `--target`, and guessing the triple is how a sweep produces ninety-six
+    /// identical failures.
+    fn host_triple(runner: &ToolRunner) -> Option<String> {
+        let output = runner.run(ToolInvocation::new("rustc", ["-vV"])).ok()?;
+        output
+            .stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("host: "))
+            .map(|triple| triple.trim().to_string())
     }
 
     pub fn runner(&self) -> &ToolRunner {
@@ -58,7 +74,7 @@ impl CargoBuildSystem {
         configuration: &BuildConfiguration,
     ) -> Vec<String> {
         let mut arguments = vec!["build".to_string(), "--release".to_string()];
-        arguments.extend(configuration.unstable_args());
+        arguments.extend(configuration.unstable_args(self.host_triple.as_deref()));
         arguments.push("--package".into());
         arguments.push(target.package.clone());
         // The target directory travels in the environment rather than on the
@@ -81,7 +97,7 @@ impl CargoBuildSystem {
         configuration: &BuildConfiguration,
     ) -> String {
         let mut parts = vec!["cargo".to_string(), "build".to_string(), "--release".to_string()];
-        parts.extend(configuration.unstable_args());
+        parts.extend(configuration.unstable_args(self.host_triple.as_deref()));
         parts.push("--package".into());
         parts.push(target.package.clone());
         parts.extend(configuration.cargo_config_args());

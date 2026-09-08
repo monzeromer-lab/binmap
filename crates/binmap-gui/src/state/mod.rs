@@ -221,7 +221,7 @@ impl AppState {
     pub fn findings_for(&self, view: View) -> Vec<&Finding> {
         self.findings
             .iter()
-            .filter(|finding| view_for_kind(&finding.kind()) == Some(view))
+            .filter(|finding| view_for_kind(finding.kind()) == Some(view))
             .collect()
     }
 
@@ -237,7 +237,7 @@ impl AppState {
     /// state it renders rather than a reason to hide.
     pub fn selected_finding(&self) -> Option<&Finding> {
         let id = self.selected_finding.as_ref()?;
-        self.findings.iter().find(|finding| &finding.id() == id)
+        self.findings.iter().find(|finding| finding.id() == id)
     }
 
     // -- runs -------------------------------------------------------------

@@ -104,6 +104,15 @@ pub struct Evidence {
     pub digest: String,
     /// The process exit status, where the tool is a process.
     pub exit_code: i32,
+    /// The digest this record carried before an export redacted it.
+    ///
+    /// Set only on an exported artifact. Its presence is the statement that
+    /// this record is not byte-for-byte what the tool produced — the output
+    /// has had home directories, hostnames and anything that looked like a
+    /// credential removed. The record still verifies, so the session opens;
+    /// this is how the recipient knows it was altered anyway.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redacted_from: Option<String>,
 }
 
 impl Evidence {
@@ -137,6 +146,15 @@ impl Evidence {
     /// Whether the record still hashes to the digest it carries.
     pub fn digest_matches(&self) -> bool {
         self.expected_digest() == self.digest
+    }
+
+    /// Whether an export altered this record's content.
+    ///
+    /// A redacted record still verifies — it was re-digested over what it now
+    /// says — so this is the only way to know, and the Evidence tab shows it
+    /// rather than presenting redacted output as verbatim.
+    pub fn was_redacted(&self) -> bool {
+        self.redacted_from.is_some()
     }
 }
 
@@ -202,6 +220,7 @@ impl EvidenceStore {
             digest: String::new(),
             output,
             exit_code,
+            redacted_from: None,
         };
         evidence.digest = evidence.expected_digest();
         let mut inner = self.inner.write().expect("evidence store poisoned");
@@ -320,6 +339,7 @@ mod tests {
             output: "it definitely worked".into(),
             digest: "0".repeat(64),
             exit_code: 0,
+            redacted_from: None,
         };
         let refused = store.adopt([forged.clone()]);
         assert_eq!(refused, vec![forged.id.clone()]);

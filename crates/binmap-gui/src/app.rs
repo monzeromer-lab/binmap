@@ -196,7 +196,7 @@ impl Render for Binmap {
         let selected = self.state.selected_finding().cloned();
         let evidence = selected
             .as_ref()
-            .map(|finding| self.engine.evidence(&finding.id()))
+            .map(|finding| self.engine.evidence(finding.id()))
             .unwrap_or_default();
 
         div()

@@ -6,6 +6,7 @@
 
 use crate::config::{BuildStd, DebugInfo, Lto, OptLevel, PanicStrategy, Strip, SweepMatrix};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 /// A configuration cargo can be asked to build.
@@ -153,14 +154,46 @@ impl BuildConfiguration {
         flags
     }
 
-    /// The `-Z build-std` arguments, when the extended sweep is on. These need
-    /// a nightly toolchain, which the environment probe confirms before the
-    /// axis is offered.
-    pub fn unstable_args(&self) -> Vec<String> {
-        match self.build_std {
-            None | Some(BuildStd::Off) => Vec::new(),
-            Some(other) => vec![format!("-Zbuild-std={}", other.as_toml())],
+    /// The `-Z build-std` arguments, when the extended sweep is on.
+    ///
+    /// Three things here were wrong until an audit found them, and each one
+    /// alone makes the axis fail:
+    ///
+    /// - `panic_immediate_abort` is a build-std **feature**, not a crate. It
+    ///   goes to `-Zbuild-std-features`, and passing it as a crate name makes
+    ///   cargo fail to find a crate by that name.
+    /// - `-Zbuild-std` requires an explicit `--target`, because rebuilding the
+    ///   standard library for the host without naming it is not something
+    ///   cargo will do.
+    /// - Both require nightly, which the environment probe confirms before the
+    ///   axis is offered rather than after ninety-six builds have failed
+    ///   identically.
+    ///
+    /// `target` is the triple to build for; `None` yields no arguments at all,
+    /// because a build-std sweep without one cannot work and silently
+    /// producing a broken command line is worse than producing none.
+    pub fn unstable_args(&self, target: Option<&str>) -> Vec<String> {
+        let Some(build_std) = self.build_std else { return Vec::new() };
+        if build_std == BuildStd::Off {
+            return Vec::new();
         }
+        let Some(target) = target else { return Vec::new() };
+
+        let mut args = vec![
+            "-Zbuild-std=core,alloc,std,panic_abort".to_string(),
+            format!("--target={target}"),
+        ];
+        if build_std == BuildStd::PanicImmediateAbort {
+            // The lever this axis exists for: it removes the panic formatting
+            // machinery entirely, which is dramatic on small binaries.
+            args.push("-Zbuild-std-features=panic_immediate_abort".to_string());
+        }
+        args
+    }
+
+    /// Whether this configuration needs a nightly toolchain.
+    pub fn needs_nightly(&self) -> bool {
+        !matches!(self.build_std, None | Some(BuildStd::Off))
     }
 
     /// The rows of the configuration table, as `(axis, value)` pairs. Only the
@@ -197,21 +230,43 @@ impl BuildConfiguration {
         rows
     }
 
-    /// A short, stable, filesystem-safe name. Used as the per-configuration
-    /// target subdirectory, so a resumed sweep finds its own cached builds.
+    /// A short, stable, filesystem-safe name.
+    ///
+    /// This one string is the per-configuration target subdirectory, the key a
+    /// resumed sweep looks up, and the id of a point on the frontier — so two
+    /// configurations sharing it is not a cosmetic problem. The readable part
+    /// abbreviates each axis and truncates its value, which collided for long
+    /// values like `target-cpu=x86-64-v3` against `target-cpu=x86-64-v4`; the
+    /// digest suffix is what makes collision impossible rather than unlikely.
     pub fn name(&self) -> String {
-        let mut name = String::new();
-        for (axis, value) in self.settings() {
-            if !name.is_empty() {
-                name.push('-');
+        let settings = self.settings();
+        if settings.is_empty() {
+            return "profile-default".to_string();
+        }
+
+        let mut readable = String::new();
+        for (axis, value) in &settings {
+            if !readable.is_empty() {
+                readable.push('-');
             }
             let axis: String = axis.split('-').filter_map(|part| part.chars().next()).collect();
             let value: String =
                 value.chars().filter(|c| c.is_ascii_alphanumeric()).take(6).collect();
-            name.push_str(&axis);
-            name.push_str(&value);
+            readable.push_str(&axis);
+            readable.push_str(&value);
         }
-        if name.is_empty() { "profile-default".to_string() } else { name }
+
+        // Over the full, untruncated settings, so nothing the readable part
+        // dropped can make two configurations agree.
+        let mut hasher = Sha256::new();
+        for (axis, value) in &settings {
+            hasher.update(axis.as_bytes());
+            hasher.update([0u8]);
+            hasher.update(value.as_bytes());
+            hasher.update([0u8]);
+        }
+        let digest = format!("{:x}", hasher.finalize());
+        format!("{readable}-{}", &digest[..8])
     }
 
     /// The one-line form the Profile Lab shows beside a point.
@@ -293,6 +348,46 @@ mod tests {
         let names: std::collections::BTreeSet<String> =
             BuildConfiguration::expand(&SweepMatrix::default()).iter().map(|c| c.name()).collect();
         assert_eq!(names.len(), SweepMatrix::default().cardinality());
+    }
+
+    #[test]
+    fn long_values_that_share_a_prefix_do_not_share_a_name() {
+        // The readable part truncates to six characters, so these were the
+        // same string — and that string is the target directory, the resume
+        // key and the frontier point id all at once.
+        let a = BuildConfiguration { target_cpu: Some("x86-64-v3".into()), ..Default::default() };
+        let b = BuildConfiguration { target_cpu: Some("x86-64-v4".into()), ..Default::default() };
+        assert_ne!(a.name(), b.name(), "two target-cpu points collapsed to one directory");
+    }
+
+    #[test]
+    fn a_name_is_stable_across_runs() {
+        // It is a cache key and a resume key, so it must not depend on
+        // anything that varies between processes.
+        let configuration =
+            BuildConfiguration { opt_level: Some(OptLevel::Size), ..Default::default() };
+        assert_eq!(configuration.name(), configuration.clone().name());
+    }
+
+    #[test]
+    fn build_std_passes_a_feature_as_a_feature_and_demands_a_target() {
+        let configuration = BuildConfiguration {
+            build_std: Some(BuildStd::PanicImmediateAbort),
+            ..Default::default()
+        };
+        // Without a target triple there is no workable command line, so there
+        // is none at all rather than a broken one.
+        assert!(configuration.unstable_args(None).is_empty());
+
+        let args = configuration.unstable_args(Some("x86_64-unknown-linux-gnu"));
+        assert!(args.contains(&"-Zbuild-std-features=panic_immediate_abort".to_string()), "{args:?}");
+        assert!(args.contains(&"--target=x86_64-unknown-linux-gnu".to_string()), "{args:?}");
+        // The feature must not appear as a crate name.
+        assert!(
+            !args.iter().any(|a| a.starts_with("-Zbuild-std=") && a.contains("panic_immediate")),
+            "a build-std feature was passed as a crate: {args:?}"
+        );
+        assert!(configuration.needs_nightly());
     }
 
     #[test]
