@@ -219,8 +219,21 @@ impl Inner {
             .ok_or_else(|| Error::Other(format!("no target `{id}` in this project")))
     }
 
+    /// A run identifier nothing else is using.
+    ///
+    /// The counter restarts at zero each process, so after a restored session
+    /// adopted `run-0001` the next sweep minted `run-0001` too — and, finding
+    /// state under that key, resumed the old run instead of starting a new
+    /// one. Skipping past what is already there is the fix, and it is cheap
+    /// because runs are few.
     fn mint_run(&self) -> RunId {
-        RunId(format!("run-{:04}", self.next_run.fetch_add(1, Ordering::SeqCst) + 1))
+        loop {
+            let candidate =
+                RunId(format!("run-{:04}", self.next_run.fetch_add(1, Ordering::SeqCst) + 1));
+            if !self.runs.lock().expect("runs poisoned").contains_key(&candidate) {
+                return candidate;
+            }
+        }
     }
 
     fn run_sweep(
@@ -259,15 +272,17 @@ impl Inner {
         // later still has everything this run measured. A sweep the user
         // cannot resume after closing the window is a sweep they will simply
         // run again.
-        if let Err(error) = self.persist(target) {
-            events.emit(EngineEvent::Failed {
-                run: run.clone(),
-                error: format!("the session could not be saved: {error}"),
-            });
-        }
-
-        if let Err(error) = outcome {
-            events.emit(EngineEvent::Failed { run, error: error.to_string() });
+        // One terminal event per run. Emitting Failed for a save problem and
+        // again for the sweep's own error broke that invariant, which the
+        // interface relies on to stop showing progress exactly once.
+        let saved = self.persist(target);
+        match (outcome, saved) {
+            (Err(error), _) => events.emit(EngineEvent::Failed { run, error: error.to_string() }),
+            (Ok(()), Err(error)) => events.emit(EngineEvent::Failed {
+                run,
+                error: format!("the run finished but the session could not be saved: {error}"),
+            }),
+            (Ok(()), Ok(())) => {}
         }
     }
 

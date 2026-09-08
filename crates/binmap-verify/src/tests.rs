@@ -130,7 +130,11 @@ fn a_result_inside_the_noise_floor_is_inconclusive_and_never_a_pass() {
     // It does not reject the candidate, and it does not claim a win either.
     assert!(report.passed());
     assert_eq!(report.inconclusive(), vec![Gate::BenchmarkNotWorse]);
-    assert_eq!(report.summary(), "Passed, with BenchmarkNotWorse inconclusive");
+    // The summary names what was inconclusive *and* what never ran. "All
+    // gates passed" is reserved for a candidate where all of them actually
+    // did; anything less reads as a stronger statement than the evidence
+    // supports.
+    assert_eq!(report.summary(), "Passed, with BenchmarkNotWorse inconclusive; MiriClean not run");
     assert_ne!(report.outcome(Gate::BenchmarkNotWorse).unwrap().result, GateResult::Passed);
 }
 
@@ -213,4 +217,40 @@ fn a_report_round_trips_through_the_session_artifact() {
     let json = serde_json::to_string(&report).unwrap();
     let restored: VerificationReport = serde_json::from_str(&json).unwrap();
     assert_eq!(report, restored);
+}
+
+#[test]
+fn a_summary_never_claims_more_than_the_gates_actually_checked() {
+    let runner = runner();
+    // No test command and no sanitizer: two gates cannot run at all.
+    let plan = GatePlan::new(shell("true"));
+    let report = Harness::new(&runner, plan).verify(&Candidate::new("c").sized(measured(10, 9)));
+
+    assert!(report.passed());
+    assert!(!report.skipped().is_empty());
+    assert_ne!(
+        report.summary(),
+        "All gates passed",
+        "two gates never ran, so this is not what happened"
+    );
+    assert!(report.summary().contains("not run"), "{}", report.summary());
+}
+
+#[test]
+fn cargos_own_warning_tally_is_not_counted_as_a_warning() {
+    // `warning: \`app\` (lib) generated 3 warnings` starts with "warning:" and
+    // is not one. Counting it inflated the total by one per package and made
+    // NoNewWarnings fail on candidates that added nothing.
+    let runner = runner();
+    let noisy = "echo 'warning: unused variable: `x`' >&2; \
+                 echo 'warning: `app` (lib) generated 1 warning' >&2";
+    let plan = GatePlan::new(shell(noisy)).against_baseline_warnings(1);
+    let report = Harness::new(&runner, plan).verify(&Candidate::new("c").sized(measured(10, 10)));
+
+    assert_eq!(
+        report.outcome(Gate::NoNewWarnings).unwrap().result,
+        GateResult::Passed,
+        "cargo's own tally was counted as a warning: {}",
+        report.outcome(Gate::NoNewWarnings).unwrap().detail
+    );
 }

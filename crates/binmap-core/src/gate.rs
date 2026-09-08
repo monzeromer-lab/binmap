@@ -232,19 +232,44 @@ impl VerificationReport {
         self.outcomes.iter().filter_map(|o| o.caveat.as_deref()).collect()
     }
 
+    /// The gates that did not run at all.
+    pub fn skipped(&self) -> Vec<Gate> {
+        self.outcomes
+            .iter()
+            .filter(|o| matches!(o.result, GateResult::Skipped { .. }))
+            .map(|o| o.gate)
+            .collect()
+    }
+
     /// The one-line verdict: what happened, and if it failed, which gate.
+    ///
+    /// "All gates passed" is reserved for a candidate where all of them
+    /// actually ran. It was printed for one where two of six were skipped,
+    /// which reads as a stronger statement than the evidence supports — and
+    /// the whole point of naming gates is that the reader knows what was
+    /// checked.
     pub fn summary(&self) -> String {
-        match self.rejected_by() {
-            Some(gate) => format!("Rejected by {gate}"),
-            None => {
-                let inconclusive = self.inconclusive();
-                if inconclusive.is_empty() {
-                    "All gates passed".to_string()
-                } else {
-                    let names: Vec<&str> = inconclusive.iter().map(|g| g.label()).collect();
-                    format!("Passed, with {} inconclusive", names.join(" and "))
-                }
-            }
+        if let Some(gate) = self.rejected_by() {
+            return format!("Rejected by {gate}");
+        }
+
+        let inconclusive = self.inconclusive();
+        let skipped = self.skipped();
+
+        let mut caveats = Vec::new();
+        if !inconclusive.is_empty() {
+            let names: Vec<&str> = inconclusive.iter().map(|g| g.label()).collect();
+            caveats.push(format!("{} inconclusive", names.join(" and ")));
+        }
+        if !skipped.is_empty() {
+            let names: Vec<&str> = skipped.iter().map(|g| g.label()).collect();
+            caveats.push(format!("{} not run", names.join(" and ")));
+        }
+
+        if caveats.is_empty() {
+            "All gates passed".to_string()
+        } else {
+            format!("Passed, with {}", caveats.join("; "))
         }
     }
 

@@ -137,10 +137,19 @@ impl NoiseFloor {
 ///
 /// 1. Is the difference bigger than this machine's noise? If not, the answer is
 ///    `Inconclusive` — not "no change", which would be a claim we cannot make.
-/// 2. Is it statistically significant? Decided by a Mann-Whitney U test, which
-///    makes no assumption that timings are normally distributed, because they
-///    are not.
-pub fn compare(baseline: &Samples, candidate: &Samples, floor: &NoiseFloor) -> BenchmarkVerdict {
+/// 2. Is it statistically significant at `significance`? Decided by a
+///    Mann-Whitney U test, which makes no assumption that timings are normally
+///    distributed, because they are not.
+///
+/// `significance` is the caller's, not ours. It was hardcoded to 0.05 here
+/// while the gate printed whatever the user had configured beside its name —
+/// so a project asking for 0.01 was shown 0.01 and judged at 0.05.
+pub fn compare(
+    baseline: &Samples,
+    candidate: &Samples,
+    floor: &NoiseFloor,
+    significance: f64,
+) -> BenchmarkVerdict {
     let (Some(baseline_median), Some(candidate_median)) = (baseline.median(), candidate.median())
     else {
         return BenchmarkVerdict::Inconclusive {
@@ -177,14 +186,14 @@ pub fn compare(baseline: &Samples, candidate: &Samples, floor: &NoiseFloor) -> B
         };
     }
 
-    let significance = mann_whitney(&baseline.sorted_nanos(), &candidate.sorted_nanos());
-    if significance.p_value > 0.05 {
+    let test = mann_whitney(&baseline.sorted_nanos(), &candidate.sorted_nanos());
+    if test.p_value > significance {
         return BenchmarkVerdict::Inconclusive {
             detail: format!(
                 "{:.1}% {}, but the samples overlap too much to call it (p = {:.2}, {} runs)",
                 percent.abs(),
                 if relative < 0.0 { "faster" } else { "slower" },
-                significance.p_value,
+                test.p_value,
                 baseline.len() + candidate.len()
             ),
         };
@@ -196,7 +205,7 @@ pub fn compare(baseline: &Samples, candidate: &Samples, floor: &NoiseFloor) -> B
                 "{:.1}% faster, outside the {} noise floor (p = {:.3})",
                 percent.abs(),
                 floor.describe(),
-                significance.p_value
+                test.p_value
             ),
         }
     } else {
@@ -204,7 +213,7 @@ pub fn compare(baseline: &Samples, candidate: &Samples, floor: &NoiseFloor) -> B
             detail: format!(
                 "{percent:.1}% slower, outside the {} noise floor (p = {:.3})",
                 floor.describe(),
-                significance.p_value
+                test.p_value
             ),
         }
     }
@@ -304,7 +313,7 @@ mod tests {
     fn a_difference_inside_the_noise_floor_is_inconclusive_not_no_change() {
         let baseline = millis(&[100, 101, 102, 103, 104, 105]);
         let candidate = millis(&[99, 100, 101, 102, 103, 104]);
-        let verdict = compare(&baseline, &candidate, &floor(0.05));
+        let verdict = compare(&baseline, &candidate, &floor(0.05), 0.05);
         match verdict {
             BenchmarkVerdict::Inconclusive { detail } => {
                 assert!(detail.contains("noise floor"), "{detail}");
@@ -317,7 +326,7 @@ mod tests {
     fn a_large_consistent_win_is_reported_as_one() {
         let baseline = millis(&[200, 201, 202, 203, 204, 205, 206]);
         let candidate = millis(&[100, 101, 102, 103, 104, 105, 106]);
-        let verdict = compare(&baseline, &candidate, &floor(0.03));
+        let verdict = compare(&baseline, &candidate, &floor(0.03), 0.05);
         assert!(matches!(verdict, BenchmarkVerdict::Improved { .. }), "{verdict:?}");
     }
 
@@ -325,7 +334,7 @@ mod tests {
     fn a_large_consistent_loss_is_reported_as_one() {
         let baseline = millis(&[100, 101, 102, 103, 104, 105, 106]);
         let candidate = millis(&[200, 201, 202, 203, 204, 205, 206]);
-        let verdict = compare(&baseline, &candidate, &floor(0.03));
+        let verdict = compare(&baseline, &candidate, &floor(0.03), 0.05);
         match verdict {
             BenchmarkVerdict::Regressed { detail } => {
                 assert!(detail.contains("slower"), "{detail}")
@@ -340,13 +349,13 @@ mod tests {
         // interleave: the honest answer is that we cannot tell.
         let baseline = millis(&[100, 140, 180, 220, 260]);
         let candidate = millis(&[110, 150, 190, 230, 270]);
-        let verdict = compare(&baseline, &candidate, &floor(0.01));
+        let verdict = compare(&baseline, &candidate, &floor(0.01), 0.05);
         assert!(matches!(verdict, BenchmarkVerdict::Inconclusive { .. }), "{verdict:?}");
     }
 
     #[test]
     fn too_few_samples_is_inconclusive_rather_than_a_coin_flip() {
-        let verdict = compare(&millis(&[100, 200]), &millis(&[10, 20]), &floor(0.01));
+        let verdict = compare(&millis(&[100, 200]), &millis(&[10, 20]), &floor(0.01), 0.05);
         match verdict {
             BenchmarkVerdict::Inconclusive { detail } => assert!(detail.contains("too few")),
             other => panic!("expected inconclusive: {other:?}"),
@@ -356,8 +365,25 @@ mod tests {
     #[test]
     fn identical_samples_are_never_significant() {
         let samples = millis(&[100, 100, 100, 100, 100, 100]);
-        let verdict = compare(&samples, &samples, &floor(0.0));
+        let verdict = compare(&samples, &samples, &floor(0.0), 0.05);
         assert!(matches!(verdict, BenchmarkVerdict::Inconclusive { .. }), "{verdict:?}");
+    }
+
+    #[test]
+    fn the_significance_level_is_the_callers_and_reaches_the_decision() {
+        // It was hardcoded to 0.05 while the gate printed whatever the project
+        // had configured — so a project asking for 0.01 was shown 0.01 and
+        // judged at 0.05.
+        let baseline = millis(&[100, 102, 104, 106, 108, 110, 112]);
+        let candidate = millis(&[112, 114, 116, 118, 120, 122, 124]);
+
+        // Lenient: the difference clears the bar.
+        let lenient = compare(&baseline, &candidate, &floor(0.01), 0.05);
+        assert!(matches!(lenient, BenchmarkVerdict::Regressed { .. }), "{lenient:?}");
+
+        // Strict enough that the same samples no longer settle it.
+        let strict = compare(&baseline, &candidate, &floor(0.01), 0.0001);
+        assert!(matches!(strict, BenchmarkVerdict::Inconclusive { .. }), "{strict:?}");
     }
 
     #[test]

@@ -390,8 +390,19 @@ impl<'a> Harness<'a> {
     }
 }
 
+/// Count the warnings cargo actually emitted.
+///
+/// Cargo prints a per-package tally of its own — "warning: `app` (lib)
+/// generated 3 warnings" — which starts with `warning:` and is not one. Adding
+/// it inflated the count by one per package and made NoNewWarnings fail on
+/// candidates that added nothing.
 fn count_warnings(stderr: &str) -> usize {
-    stderr.lines().filter(|line| line.trim_start().starts_with("warning:")).count()
+    stderr
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.starts_with("warning:"))
+        .filter(|line| !line.contains("generated ") || !line.contains("warning"))
+        .count()
 }
 
 fn first_error_line(text: &str) -> Option<String> {

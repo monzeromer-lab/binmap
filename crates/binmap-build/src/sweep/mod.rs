@@ -503,22 +503,53 @@ impl<'a> Sweep<'a> {
             };
             let Ok(durations) = source.samples(&artifact) else { continue };
             let samples = Samples::new(durations);
-            let verdict = timing::compare(&baseline_samples, &samples, &floor);
+            let verdict = timing::compare(
+                &baseline_samples,
+                &samples,
+                &floor,
+                self.options.gates.significance,
+            );
             state.measured[index].runtime_nanos =
                 samples.median().map(|median| median.as_nanos() as u64);
 
-            // A regression discovered here rejects a configuration that had
-            // passed everything cheaper. It stays in the table, rejected by
-            // the gate that caught it.
-            if let BenchmarkVerdict::Regressed { detail } = &verdict
-                && let Some(outcome) = state.measured[index]
-                    .report
-                    .outcomes
-                    .iter_mut()
-                    .find(|o| o.gate == Gate::BenchmarkNotWorse)
+            // Record the verdict, whatever it was.
+            //
+            // Only a regression used to be written back, so a candidate that
+            // was timed and found faster still reported "no benchmark is
+            // declared" — and Inconclusive, which §6 makes a distinct outcome,
+            // was unreachable. A regression additionally rejects a candidate
+            // that had passed everything cheaper; it stays in the table,
+            // rejected by the gate that caught it.
+            if let Some(outcome) = state.measured[index]
+                .report
+                .outcomes
+                .iter_mut()
+                .find(|o| o.gate == Gate::BenchmarkNotWorse)
             {
-                outcome.result = binmap_verify::GateResult::Failed;
-                outcome.detail = detail.clone();
+                use binmap_verify::GateResult;
+                let (result, detail) = match &verdict {
+                    BenchmarkVerdict::Improved { detail }
+                    | BenchmarkVerdict::NoSignificantChange { detail } => {
+                        (GateResult::Passed, detail.clone())
+                    }
+                    BenchmarkVerdict::Regressed { detail } => (GateResult::Failed, detail.clone()),
+                    BenchmarkVerdict::Inconclusive { detail } => {
+                        (GateResult::Inconclusive { reason: detail.clone() }, detail.clone())
+                    }
+                };
+                outcome.result = result;
+                outcome.detail = detail;
+            }
+
+            // The finding was streamed before the benchmark ran, so a
+            // candidate the benchmark has just rejected is still on screen as
+            // measured. Re-emit it, and the interface replaces the row rather
+            // than showing a stale verdict.
+            if let Ok(finding) = self.configuration_finding(state, &state.measured[index]) {
+                events.emit(EngineEvent::Finding {
+                    run: state.run.clone(),
+                    finding: Box::new(finding),
+                });
             }
         }
     }
