@@ -1,0 +1,5 @@
+# The corpus entry is *about* the wasm target, so it builds for it by default.
+# A sweep pointed here therefore measures a .wasm module rather than a host
+# binary, which is the point of having the entry at all.
+[build]
+target = "wasm32-unknown-unknown"

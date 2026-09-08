@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/parser", "crates/engine", "crates/cli"]
+
+# Reference corpus, entry three: a multi-crate workspace.
+#
+# It exists because nothing else in the corpus has more than one member, and
+# F0.1's job is to "detect the cargo project or workspace; enumerate targets
+# and profiles". A single-package project exercises none of that: the grouping
+# in the target list, the per-package sweep selection, and the distinction
+# between a workspace root and a package root are all untested against one
+# member.
+#
+# Three members, deliberately of different shapes: a library with no
+# dependencies, a library that depends on it, and a binary that depends on
+# both. So the target list has a real dependency order to show, and the sweep
+# has a choice of targets to be pointed at.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+opt-level = 3

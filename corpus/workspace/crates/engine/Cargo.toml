@@ -1,0 +1,8 @@
+[package]
+name = "engine"
+description = "A middle library: depends on parser, and is depended on by cli."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+parser = { path = "../parser" }

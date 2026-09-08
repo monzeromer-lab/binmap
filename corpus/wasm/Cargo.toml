@@ -1,0 +1,16 @@
+[package]
+name = "wasmtarget"
+version = "0.1.0"
+edition = "2024"
+description = """
+Reference corpus, entry six: a WASM target. Size is the whole story for \
+something served over a network, and the levers differ from a native binary's."""
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[profile.release]
+opt-level = "z"
+lto = true

@@ -1,0 +1,12 @@
+[package]
+name = "embedded"
+version = "0.1.0"
+edition = "2024"
+description = """
+Reference corpus, entry four: a no_std library. The size levers that matter \
+here are the ones that matter to people who count bytes."""
+
+[dependencies]
+
+[profile.release]
+opt-level = "z"

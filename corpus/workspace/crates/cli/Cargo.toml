@@ -1,0 +1,13 @@
+[package]
+name = "cli"
+description = "The binary: what actually ships, and what a sweep measures."
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "cli"
+path = "src/main.rs"
+
+[dependencies]
+engine = { path = "../engine" }
+parser = { path = "../parser" }

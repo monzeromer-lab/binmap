@@ -39,7 +39,10 @@ tracing = "0.1"
 
 # TOOLING.md §1: link in when the output is structured data queried repeatedly;
 # shell out when the tool is years of specialised work producing a report.
-object = { version = "0.40.0", default-features = false, features = ["read", "std", "elf"] }
+# `wasm` alongside `elf` because a WASM module is a Rust target, and a size
+# report that says "no sections" for one has not degraded honestly, it has
+# just stopped looking.
+object = { version = "0.40.0", default-features = false, features = ["read", "std", "elf", "wasm"] }
 cargo_metadata = "0.23.1"
 toml_edit = "0.25.13"
 similar = "3.2.0"

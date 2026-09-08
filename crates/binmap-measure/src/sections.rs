@@ -6,6 +6,11 @@
 //! which costs nothing now and is what makes `P4`'s platform question
 //! answerable later.
 //!
+//! WASM is not future portability, though: it is a Rust target today, and the
+//! corpus has one. The `wasm` feature was off at first, which meant a `.wasm`
+//! module reported no sections at all — that is not degrading honestly, it is
+//! just not looking.
+//!
 //! What this module adds on top is the one distinction a size report gets
 //! wrong if it does not think about it: whether a section occupies space in
 //! the file. `.bss` does not, and a report that counts it is wrong by exactly
@@ -79,6 +84,25 @@ mod tests {
         let bss = sections.iter().find(|s| s.name == ".bss").expect("every Rust binary has one");
         assert!(!bss.occupies_file, ".bss counted against the file would be wrong by its size");
         assert!(bss.bytes > 0, "it still occupies address space");
+    }
+
+    #[test]
+    fn a_wasm_module_is_read_rather_than_declined() {
+        // A complete minimal module: one function of type `() -> ()` whose
+        // body is a bare `end`. A bare header with only a type section is not
+        // enough — object declines it, which is how this test first failed.
+        let module: Vec<u8> = vec![
+            0x00, 0x61, 0x73, 0x6d, // \0asm
+            0x01, 0x00, 0x00, 0x00, // version 1
+            0x01, 0x04, 0x01, 0x60, 0x00, 0x00, // type:     one () -> ()
+            0x03, 0x02, 0x01, 0x00, // function: one, of type 0
+            0x0a, 0x04, 0x01, 0x02, 0x00, 0x0b, // code:     one body, just `end`
+        ];
+
+        let sections = parse(&module);
+        let names: Vec<&str> = sections.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["<type>", "<function>", "<code>"], "a WASM module was not read");
+        assert!(sections.iter().all(|s| s.occupies_file), "every wasm section is in the file");
     }
 
     #[test]

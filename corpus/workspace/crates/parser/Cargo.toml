@@ -1,0 +1,7 @@
+[package]
+name = "parser"
+description = "A leaf library: no dependencies, so it is the bottom of the graph."
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
