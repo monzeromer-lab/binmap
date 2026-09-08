@@ -66,8 +66,43 @@ pub fn probe_all(runner: &ToolRunner) -> Vec<Probe> {
     probes.push(perf_event_paranoid());
     probes.push(sanitizer(runner));
     probes.push(git(runner));
+    probes.push(symbol_mangling(runner));
     probes.push(core_dumps(runner));
     probes
+}
+
+/// Whether analysis builds will carry v0 symbol names (TOOLING §3.4).
+///
+/// Not a size lever, but Phase 1 depends on it: v0 encodes the crate, the path
+/// and — crucially — the *generic arguments*, which is the grouping key
+/// monomorphization attribution needs. Legacy symbols do not carry it, and
+/// grouping degrades to heuristic prefix matching.
+///
+/// So this is probed now rather than discovered in Phase 1, and it reports
+/// what it costs rather than only what is set. The toolchain default is what
+/// matters, because Binmap can pass the flag on analysis builds itself.
+fn symbol_mangling(runner: &ToolRunner) -> Probe {
+    let name = "symbol-mangling-version";
+    let configured = runner
+        .run(ToolInvocation::new(
+            "cargo",
+            ["config", "get", "build.rustflags", "-Zunstable-options"],
+        ))
+        .map(|output| output.stdout.contains("symbol-mangling-version=v0"))
+        .unwrap_or(false);
+
+    if configured {
+        Probe::present(PROJECT, name, "v0 — generic arguments survive into symbol names")
+    } else {
+        Probe::needs(
+            PROJECT,
+            name,
+            ProbeStatus::Unusable,
+            "legacy; generic grouping will degrade to prefix matching in Phase 1",
+            "cargo build --config 'build.rustflags=[\"-Csymbol-mangling-version=v0\"]'",
+        )
+        .with_action("Enable for analysis builds")
+    }
 }
 
 /// A tool that answers `--version`.
@@ -362,6 +397,22 @@ mod tests {
                 probe.detail
             );
         }
+    }
+
+    #[test]
+    fn the_mangling_scheme_is_probed_before_phase_1_depends_on_it() {
+        let probes = probes();
+        let mangling = probes
+            .iter()
+            .find(|probe| probe.name == "symbol-mangling-version")
+            .expect("TOOLING §3.4 makes this a Phase 1 dependency");
+        // Whatever this toolchain does, the probe says what it costs rather
+        // than only what is set.
+        assert!(
+            mangling.detail.contains("v0") || mangling.detail.contains("degrade"),
+            "{}",
+            mangling.detail
+        );
     }
 
     #[test]

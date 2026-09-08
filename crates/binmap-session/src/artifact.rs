@@ -31,6 +31,23 @@ pub struct TargetMetadata {
 }
 
 impl TargetMetadata {
+    /// Record which commit this was measured at, and whether the tree was
+    /// dirty.
+    ///
+    /// A number measured on an uncommitted tree cannot be reproduced by
+    /// anyone else. The artifact said `dirty: false` for every session because
+    /// nothing ever set it, which is worse than saying nothing.
+    pub fn at_commit(mut self, commit: Option<String>, dirty: bool) -> Self {
+        self.commit = commit;
+        self.dirty = dirty;
+        self
+    }
+
+    pub fn at_root(mut self, root: impl Into<PathBuf>) -> Self {
+        self.root = Some(root.into());
+        self
+    }
+
     pub fn of(target: &Target) -> Self {
         Self {
             id: target.id.clone(),

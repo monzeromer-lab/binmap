@@ -180,9 +180,10 @@ impl BinmapEngine {
     /// Export this session for someone else to read, with the redaction pass
     /// applied (`U13`).
     pub fn export(&self, target: &Target, path: &std::path::Path) -> Result<String> {
-        let mut artifact = SessionArtifact::new(TargetMetadata::of(target))
+        let mut artifact = SessionArtifact::new(self.inner.metadata_for(target))
             .with_findings(self.findings())
-            .with_evidence(self.inner.runner.store().records());
+            .with_evidence(self.inner.runner.store().records())
+            .with_gates(self.inner.gate_reports());
         for (id, state) in self.inner.runs.lock().expect("runs poisoned").iter() {
             artifact = artifact.with_run(id.to_string(), "sweep", state)?;
         }
@@ -250,11 +251,23 @@ impl Inner {
             });
 
         let parallelism = self.config.read().expect("config poisoned").parallelism;
+
+        // Give the harness a sanitizer if the machine has one. Without this,
+        // MiriClean reported "no sanitizer is available" on machines that had
+        // just been probed and found one.
+        let mut gates = self.gates.clone();
+        if gates.miri.is_none() && self.runner.is_available("cargo-miri") {
+            gates = gates.sanitizing_with(binmap_core::evidence::ToolInvocation::new(
+                "cargo",
+                ["miri", "test", "--quiet"],
+            ));
+        }
+
         let sweep = Sweep {
             builder: &self.builder,
             runner: &self.runner,
             benchmark: self.benchmark.as_deref(),
-            options: SweepOptions::new(self.gates.clone()).with_parallelism(parallelism),
+            options: SweepOptions::new(gates).with_parallelism(parallelism),
         };
 
         // Findings are kept as they stream, so a view opened mid-run has
@@ -286,11 +299,43 @@ impl Inner {
         }
     }
 
+    /// What the environment probe learned about the working tree.
+    ///
+    /// The git probe already establishes both; the artifact was hardcoding
+    /// `dirty: false` and discarding it.
+    fn provenance_of_the_tree(&self) -> (Option<String>, bool) {
+        let probes = crate::environment::probe_all(&self.runner);
+        let Some(git) = probes.iter().find(|probe| probe.name == "git") else {
+            return (None, false);
+        };
+        let dirty = git.detail.contains("uncommitted");
+        let commit = git.detail.split(',').next().map(str::trim).filter(|c| !c.is_empty());
+        (commit.map(str::to_string), dirty)
+    }
+
+    fn metadata_for(&self, target: &Target) -> TargetMetadata {
+        let (commit, dirty) = self.provenance_of_the_tree();
+        TargetMetadata::of(target)
+            .at_commit(commit, dirty)
+            .at_root(self.config.read().expect("config poisoned").root.clone())
+    }
+
+    /// Every gate report this session produced.
+    fn gate_reports(&self) -> Vec<binmap_core::gate::VerificationReport> {
+        self.runs
+            .lock()
+            .expect("runs poisoned")
+            .values()
+            .flat_map(|state| state.measured.iter().map(|m| m.report.clone()))
+            .collect()
+    }
+
     /// Write everything this session knows to disk.
     fn persist(&self, target: &Target) -> Result<()> {
-        let mut artifact = SessionArtifact::new(TargetMetadata::of(target))
+        let mut artifact = SessionArtifact::new(self.metadata_for(target))
             .with_findings(self.findings.lock().expect("findings poisoned").clone())
-            .with_evidence(self.runner.store().records());
+            .with_evidence(self.runner.store().records())
+            .with_gates(self.gate_reports());
 
         // Run state travels as opaque JSON: its shape is this crate's
         // business, and the interface must not learn it.

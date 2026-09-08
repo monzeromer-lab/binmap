@@ -113,7 +113,23 @@ impl CargoBuildSystem {
         let mut env = configuration.cargo_profile_env();
         let flags = configuration.rustflags();
         if !flags.is_empty() {
-            env.insert("RUSTFLAGS".to_string(), flags.join(" "));
+            // Append rather than replace. Setting RUSTFLAGS outright dropped
+            // whatever the caller's environment already carried, so a
+            // target-cpu point was built without the project's own flags and
+            // its number was not comparable to the others.
+            //
+            // Note the limitation this cannot fix: RUSTFLAGS in the
+            // environment makes cargo ignore `build.rustflags` in the
+            // project's own `.cargo/config.toml`. Only the target-cpu axis
+            // sets it, so only that axis is affected, and the environment
+            // probe is where that belongs being said.
+            let inherited = std::env::var("RUSTFLAGS").unwrap_or_default();
+            let combined = if inherited.trim().is_empty() {
+                flags.join(" ")
+            } else {
+                format!("{} {}", inherited.trim(), flags.join(" "))
+            };
+            env.insert("RUSTFLAGS".to_string(), combined);
         }
         // Per configuration, and never the user's own. This is in the
         // environment rather than on the command line precisely so the gates
