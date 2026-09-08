@@ -1,0 +1,10 @@
+[package]
+name = "tiny"
+version = "0.1.0"
+edition = "2024"
+description = "Reference corpus: a small binary whose default release build carries obvious, removable weight"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3

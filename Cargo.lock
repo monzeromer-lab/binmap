@@ -27,8 +27,11 @@ dependencies = [
 name = "binmap-eval"
 version = "0.1.0"
 dependencies = [
+ "binmap-build",
  "binmap-core",
- "serde",
+ "binmap-measure",
+ "binmap-session",
+ "binmap-verify",
  "serde_json",
 ]
 

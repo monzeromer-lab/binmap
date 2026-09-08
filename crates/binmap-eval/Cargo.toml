@@ -1,6 +1,6 @@
 [package]
 name = "binmap-eval"
-description = "Development-only headless harness. Never published, never shipped."
+description = "Development-only headless harness. Never published, never shipped, never documented as a user surface."
 publish = false
 version.workspace = true
 edition.workspace = true
@@ -8,7 +8,14 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[[bin]]
+name = "binmap-eval"
+path = "src/main.rs"
+
 [dependencies]
 binmap-core = { workspace = true }
-serde = { workspace = true }
+binmap-build = { workspace = true }
+binmap-measure = { workspace = true }
+binmap-session = { workspace = true }
+binmap-verify = { workspace = true }
 serde_json = { workspace = true }

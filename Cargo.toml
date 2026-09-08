@@ -10,6 +10,12 @@ members = [
     "crates/binmap-gui",
 ]
 
+# The reference corpus is a set of standalone projects Binmap is pointed at,
+# not crates it builds. Excluding them keeps `cargo test --workspace` from
+# compiling material whose whole purpose is to be built ninety-six ways by
+# something else.
+exclude = ["corpus"]
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

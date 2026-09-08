@@ -8,9 +8,13 @@
 //! cache they will want back the moment it finishes (`F0.8`).
 
 pub mod cargo;
+pub mod engine;
+pub mod environment;
 pub mod project;
 pub mod sweep;
 
 pub use cargo::CargoBuildSystem;
+pub use engine::BinmapEngine;
+pub use environment::probe_all;
 pub use project::{discover, ProjectKind};
 pub use sweep::{Sweep, SweepOptions, SweepState};
