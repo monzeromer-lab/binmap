@@ -24,7 +24,16 @@ pub struct CargoBuildSystem {
 
 impl CargoBuildSystem {
     pub fn new(runner: ToolRunner, target_directory: impl Into<PathBuf>) -> Self {
-        Self { runner, target_directory: target_directory.into() }
+        // Cargo runs with the project root as its working directory, so a
+        // relative target directory would be resolved against that root and
+        // the sweep would build into `project/project/target`.
+        let target_directory = target_directory.into();
+        let target_directory = if target_directory.is_absolute() {
+            target_directory
+        } else {
+            runner.root().join(target_directory)
+        };
+        Self { runner, target_directory }
     }
 
     pub fn runner(&self) -> &ToolRunner {
@@ -181,6 +190,20 @@ mod tests {
             manifest: "Cargo.toml".into(),
             capabilities: Capabilities::none(),
         }
+    }
+
+    #[test]
+    fn a_relative_target_directory_does_not_nest_inside_the_project() {
+        // Cargo runs in the project root, so a relative path would be resolved
+        // there a second time — the sweep built into `project/project/target`
+        // until this was fixed.
+        let system = CargoBuildSystem::new(
+            ToolRunner::new(EvidenceStore::new(), "/home/ada/app"),
+            "target/binmap",
+        );
+        let directory = system.target_directory_for(&BuildConfiguration::default());
+        assert!(directory.is_absolute(), "{}", directory.display());
+        assert_eq!(directory, PathBuf::from("/home/ada/app/target/binmap/profile-default"));
     }
 
     #[test]

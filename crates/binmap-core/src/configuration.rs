@@ -37,7 +37,23 @@ pub struct BuildConfiguration {
 impl BuildConfiguration {
     /// What `cargo build --release` does with no help from us. The baseline
     /// every result is stated against.
+    ///
+    /// It sets **nothing**, and that is the point. Writing out cargo's
+    /// documented release defaults instead looks equivalent and is not: cargo
+    /// strips debuginfo in release by default, so passing an explicit
+    /// `strip = "none"` produces a binary nine times larger than the one the
+    /// user actually ships — and every reduction stated against it would be a
+    /// wrong number delivered confidently. The only baseline we can defend is
+    /// the build the user would get without us.
     pub fn default_release() -> Self {
+        Self::default()
+    }
+
+    /// Cargo's documented release defaults, written out.
+    ///
+    /// Useful for showing a user what a profile currently implies. Never a
+    /// baseline: see [`default_release`](Self::default_release).
+    pub fn documented_release_defaults() -> Self {
         Self {
             opt_level: Some(OptLevel::Three),
             lto: Some(Lto::Off),
@@ -259,5 +275,16 @@ mod tests {
     fn an_unset_axis_says_nothing_to_cargo() {
         assert!(BuildConfiguration::default().cargo_config_args().is_empty());
         assert_eq!(BuildConfiguration::default().name(), "profile-default");
+    }
+
+    #[test]
+    fn the_baseline_is_the_build_the_user_would_get_without_us() {
+        // Not cargo's documented defaults written out: cargo strips debuginfo
+        // in release, so an explicit strip="none" measures a binary nobody
+        // ships and inflates every reduction stated against it.
+        let baseline = BuildConfiguration::default_release();
+        assert!(baseline.cargo_config_args().is_empty());
+        assert_ne!(baseline, BuildConfiguration::documented_release_defaults());
+        assert_eq!(BuildConfiguration::documented_release_defaults().strip, Some(Strip::None));
     }
 }

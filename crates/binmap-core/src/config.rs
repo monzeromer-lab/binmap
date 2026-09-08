@@ -241,8 +241,15 @@ pub struct ProjectConfig {
 }
 
 impl ProjectConfig {
+    /// Open a project at `root`.
+    ///
+    /// The path is made absolute here. Every tool runs with the project root
+    /// as its working directory, so a relative target directory would be
+    /// resolved against the root a second time and the sweep would build into
+    /// `project/project/target` — which it did, until this line existed.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         let root = root.into();
+        let root = root.canonicalize().unwrap_or(root);
         let target_directory = root.join("target").join("binmap");
         Self {
             root,
