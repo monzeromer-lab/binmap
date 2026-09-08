@@ -8,6 +8,7 @@
 pub mod chrome;
 pub mod environment;
 pub mod inspector;
+pub mod palette;
 pub mod profile_lab;
 pub mod targets;
 

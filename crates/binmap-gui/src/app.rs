@@ -9,7 +9,8 @@
 //! Forgetting that notify is the most common GPUI bug (DESIGN-GUI §4), so
 //! there is exactly one place events are applied and it always notifies.
 
-use crate::state::{AppState, View};
+use crate::dispatch::Dispatch;
+use crate::state::{Action, AppState, View};
 use crate::theme::{Appearance, Theme, space};
 use crate::views::chrome::{NavRail, StatusBar, TitleBar};
 use crate::views::environment::EnvironmentPanel;
@@ -38,6 +39,36 @@ impl EventSink for ChannelSink {
     }
 }
 
+// The keyboard map. `U12` is a Must rather than a Should because keyboard
+// access is the only accommodation left for users who live in terminals, and
+// that is most of the audience.
+gpui_kit::actions!(
+    binmap,
+    [
+        /// Open or close the command palette.
+        TogglePalette,
+        /// Dismiss whatever is open; if nothing is, cancel the run.
+        Dismiss,
+        /// Sweep build configurations.
+        Sweep,
+        /// Switch between the dark and light themes.
+        ToggleTheme,
+    ]
+);
+
+/// Bind the keys. Called once, when the application starts.
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([
+        gpui_kit::KeyBinding::new("cmd-k", TogglePalette, None),
+        gpui_kit::KeyBinding::new("ctrl-k", TogglePalette, None),
+        gpui_kit::KeyBinding::new("escape", Dismiss, None),
+        gpui_kit::KeyBinding::new("cmd-shift-t", Sweep, None),
+        gpui_kit::KeyBinding::new("ctrl-shift-t", Sweep, None),
+        gpui_kit::KeyBinding::new("cmd-shift-l", ToggleTheme, None),
+        gpui_kit::KeyBinding::new("ctrl-shift-l", ToggleTheme, None),
+    ]);
+}
+
 /// The application.
 pub struct Binmap {
     engine: Arc<dyn Engine>,
@@ -51,10 +82,19 @@ pub struct Binmap {
     /// The run in flight, so it can be cancelled. A sweep the user cannot stop
     /// is a hostile tool.
     active: Option<(RunId, Cancellation)>,
+    /// `U12`: open, and what has been typed into it.
+    palette: bool,
+    query: String,
+    /// `U9`: the tier dialog, which is how a tier is raised.
+    tier_dialog: bool,
     /// Which row of the Profile Lab is open. `None` selects the frontier's
     /// first point, so the panel is never empty when there is something to
     /// show.
     selected_configuration: Option<String>,
+    /// How many runs a previous session left behind.
+    restored: usize,
+    /// The window's focus, so key bindings reach the frame.
+    focus: gpui_kit::FocusHandle,
 }
 
 impl Binmap {
@@ -128,7 +168,17 @@ impl Binmap {
             sender,
             active: None,
             selected_configuration: None,
+            restored,
+            palette: false,
+            query: String::new(),
+            tier_dialog: false,
+            focus: cx.focus_handle(),
         }
+    }
+
+    /// How many runs a previous session left behind.
+    pub fn restored_runs(&self) -> usize {
+        self.restored
     }
 
     pub fn state(&self) -> &AppState {
@@ -202,11 +252,70 @@ impl Binmap {
         self.state.set_probes(self.engine.probe_environment());
         cx.notify();
     }
+
+    /// Everything the interface can ask for, handled in one place.
+    ///
+    /// A click and a key binding produce the same `Action`, and the command
+    /// palette is a list of them — which is what makes `U12`'s "keyboard
+    /// reaches every action" a property of the design rather than a promise to
+    /// keep re-checking.
+    pub fn act(&mut self, action: Action, cx: &mut Context<Self>) {
+        match action {
+            Action::SelectView(view) => {
+                self.state.select_view(view);
+            }
+            Action::SelectTarget(id) => {
+                if self.state.select_target(&id) {
+                    // A different target's sweep is a different sweep.
+                    self.selected_configuration = None;
+                }
+            }
+            Action::SelectConfiguration(id) => self.selected_configuration = Some(id),
+            Action::SelectFinding(id) => {
+                self.state.select_finding(&id);
+            }
+            Action::SelectTab(tab) => self.tab = tab,
+            Action::StartSweep => return self.sweep(cx),
+            Action::Cancel => return self.cancel(cx),
+            Action::ToggleTheme => self.theme = self.theme.toggled(),
+            Action::RecheckEnvironment => return self.recheck_environment(cx),
+            Action::TogglePalette => {
+                self.palette = !self.palette;
+                self.query.clear();
+            }
+            Action::ClosePalette => self.palette = false,
+            Action::OpenTierDialog => self.tier_dialog = true,
+            Action::SetTier(tier) => {
+                // U9: raising a tier is always deliberate, and it is the
+                // engine's state, not the frame's.
+                self.engine.set_trust_tier(tier);
+                self.tier_dialog = false;
+            }
+            Action::CloseDialogs => {
+                self.tier_dialog = false;
+                self.palette = false;
+            }
+        }
+        cx.notify();
+    }
+
+    /// The dispatcher every view is handed.
+    fn dispatcher(&self, cx: &mut Context<Self>) -> Dispatch {
+        let this = cx.entity().downgrade();
+        std::rc::Rc::new(move |action: Action, _window: &mut Window, cx: &mut App| {
+            let _ = this.update(cx, |app: &mut Binmap, cx| app.act(action, cx));
+        })
+    }
+
+    pub fn palette_is_open(&self) -> bool {
+        self.palette
+    }
 }
 
 impl Render for Binmap {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme;
+        let dispatch = self.dispatcher(cx);
         let c = theme.colours;
 
         let commit = self
@@ -224,6 +333,27 @@ impl Render for Binmap {
             selected.as_ref().map(|finding| self.engine.evidence(finding.id())).unwrap_or_default();
 
         div()
+            .id("binmap")
+            .key_context("Binmap")
+            .track_focus(&self.focus)
+            .on_action(
+                cx.listener(|this, _: &TogglePalette, _, cx| this.act(Action::TogglePalette, cx)),
+            )
+            .on_action(cx.listener(|this, _: &Sweep, _, cx| this.act(Action::StartSweep, cx)))
+            .on_action(
+                cx.listener(|this, _: &ToggleTheme, _, cx| this.act(Action::ToggleTheme, cx)),
+            )
+            // Escape dismisses what is open; with nothing open it cancels the
+            // run, because that is what Escape means to someone watching a
+            // sweep they want to stop.
+            .on_action(cx.listener(|this, _: &Dismiss, _, cx| {
+                let action = if this.palette || this.tier_dialog {
+                    Action::CloseDialogs
+                } else {
+                    Action::Cancel
+                };
+                this.act(action, cx);
+            }))
             .flex()
             .flex_col()
             .size_full()
@@ -232,7 +362,8 @@ impl Render for Binmap {
             .font_family("IBM Plex Sans")
             .child(
                 TitleBar::new(self.project.clone(), self.engine_tier(), theme)
-                    .at_commit(short, dirty),
+                    .at_commit(short, dirty)
+                    .dispatching(&dispatch),
             )
             .child(
                 div()
@@ -245,9 +376,9 @@ impl Render for Binmap {
                     .child(
                         div().flex().flex_1().min_w_0().bg(c.surface_app).child(
                             match self.state.view() {
-                                Some(View::Environment) => {
-                                    EnvironmentPanel::of(&self.state, theme).into_any_element()
-                                }
+                                Some(View::Environment) => EnvironmentPanel::of(&self.state, theme)
+                                    .dispatching(&dispatch)
+                                    .into_any_element(),
                                 Some(View::Tune) => ProfileLab::new(
                                     // The most recent sweep for the selected
                                     // target. The engine derives the frontier;
@@ -260,21 +391,36 @@ impl Render for Binmap {
                                     self.selected_configuration.clone(),
                                     theme,
                                 )
+                                .dispatching(&dispatch)
                                 .into_any_element(),
                                 _ => TargetView::of(&self.state, self.root.clone(), theme)
+                                    .dispatching(&dispatch)
                                     .into_any_element(),
                             },
                         ),
                     )
-                    .child(Inspector::new(
-                        selected,
-                        evidence,
-                        self.tab,
-                        self.state.findings(),
-                        theme,
-                    )),
+                    .child(
+                        Inspector::new(selected, evidence, self.tab, self.state.findings(), theme)
+                            .dispatching(&dispatch),
+                    ),
             )
-            .child(StatusBar::of(&self.state, theme))
+            .child(StatusBar::of(&self.state, theme).dispatching(&dispatch))
+            // U12, and U9's dialog. Overlays last so they sit above the frame.
+            .when(self.palette, |d| {
+                d.child(crate::views::palette::Palette::new(
+                    self.state.commands(&self.query),
+                    self.query.clone(),
+                    theme,
+                    &dispatch,
+                ))
+            })
+            .when(self.tier_dialog, |d| {
+                d.child(crate::views::palette::TierDialog::new(
+                    self.engine_tier(),
+                    theme,
+                    &dispatch,
+                ))
+            })
     }
 }
 
@@ -292,6 +438,7 @@ impl Binmap {
 pub fn run(engine: Arc<dyn Engine>, project: String, root: Option<String>) {
     gpui_kit::application().run(move |cx: &mut App| {
         gpui_kit::init(cx);
+        bind_keys(cx);
 
         cx.spawn(async move |cx| {
             let bounds = cx.update(|cx| {

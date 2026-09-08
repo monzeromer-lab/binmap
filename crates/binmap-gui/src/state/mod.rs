@@ -375,3 +375,156 @@ fn view_for_kind(kind: &FindingKind) -> Option<View> {
 
 #[cfg(test)]
 mod tests;
+
+// ---------------------------------------------------------------------------
+// Intent
+// ---------------------------------------------------------------------------
+
+/// Everything the interface can ask the application to do.
+///
+/// Views emit these; one place handles them. That indirection is not
+/// ceremony — it is what makes `U12` ("keyboard reaches every action")
+/// achievable rather than aspirational, because a key binding and a click
+/// produce the same value, and the command palette is a list of them. It also
+/// makes interaction testable without a window: an `Action` is plain data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    /// Show a view. Refused if the target cannot support it.
+    SelectView(View),
+    /// Select a target, and drop a view it cannot support.
+    SelectTarget(String),
+    /// Open one configuration in the Profile Lab's panel.
+    SelectConfiguration(String),
+    /// Show a finding in the Inspector.
+    SelectFinding(String),
+    /// Switch the Inspector's tab.
+    SelectTab(InspectorTab),
+    /// Sweep the selected target's configuration matrix.
+    StartSweep,
+    /// Stop the run in flight, keeping everything it measured.
+    Cancel,
+    /// `U11`: dark and light.
+    ToggleTheme,
+    /// Re-run every environment probe, so a missing tool is recoverable
+    /// without restarting.
+    RecheckEnvironment,
+    /// `U12`.
+    TogglePalette,
+    ClosePalette,
+    /// `U9`: raising the tier is always a deliberate act, so this opens the
+    /// dialog rather than changing anything.
+    OpenTierDialog,
+    /// Confirm the tier the dialog is offering.
+    SetTier(binmap_core::config::TrustTier),
+    CloseDialogs,
+}
+
+/// Which tab of the Findings Inspector is showing.
+///
+/// Lives here rather than in the view so an [`Action`] can name one without
+/// the state layer depending on a view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InspectorTab {
+    #[default]
+    Hypothesis,
+    Evidence,
+    Proposal,
+}
+
+impl InspectorTab {
+    pub fn label(self) -> &'static str {
+        match self {
+            InspectorTab::Hypothesis => "Hypothesis",
+            InspectorTab::Evidence => "Evidence",
+            InspectorTab::Proposal => "Proposal",
+        }
+    }
+
+    pub const ALL: [InspectorTab; 3] =
+        [InspectorTab::Hypothesis, InspectorTab::Evidence, InspectorTab::Proposal];
+}
+
+/// One entry in the command palette.
+///
+/// Every action the interface offers is reachable from here, which is the
+/// whole of `U12`. An action that exists only as a click is a bug.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Command {
+    pub label: String,
+    pub group: &'static str,
+    /// The shortcut, where it has one, as the palette prints it.
+    pub shortcut: Option<&'static str>,
+    pub action: Action,
+}
+
+impl AppState {
+    /// Every command, filtered by `query`.
+    ///
+    /// Built from the live state rather than a fixed list, so a view the
+    /// target cannot support is not offered — the same rule the nav rail
+    /// follows, applied where a user is most likely to go looking.
+    pub fn commands(&self, query: &str) -> Vec<Command> {
+        let mut commands = Vec::new();
+
+        for entry in self.nav_entries() {
+            commands.push(Command {
+                label: format!("Go to {}", entry.view.label()),
+                group: "Views",
+                shortcut: None,
+                action: Action::SelectView(entry.view),
+            });
+        }
+
+        commands.push(Command {
+            label: "Sweep build configurations".into(),
+            group: "Analysis",
+            shortcut: Some("⌘⇧T"),
+            action: Action::StartSweep,
+        });
+        if self.is_busy() {
+            commands.push(Command {
+                label: "Cancel the run, keeping what it measured".into(),
+                group: "Analysis",
+                shortcut: Some("Esc"),
+                action: Action::Cancel,
+            });
+        }
+        commands.push(Command {
+            label: "Re-check the environment".into(),
+            group: "Analysis",
+            shortcut: None,
+            action: Action::RecheckEnvironment,
+        });
+
+        for target in self.targets() {
+            commands.push(Command {
+                label: format!("Select target {}", target.id),
+                group: "Targets",
+                shortcut: None,
+                action: Action::SelectTarget(target.id.clone()),
+            });
+        }
+
+        commands.push(Command {
+            label: "Change the trust tier".into(),
+            group: "Session",
+            shortcut: None,
+            action: Action::OpenTierDialog,
+        });
+        commands.push(Command {
+            label: "Switch between the dark and light themes".into(),
+            group: "Session",
+            shortcut: None,
+            action: Action::ToggleTheme,
+        });
+
+        let needle = query.trim().to_lowercase();
+        if needle.is_empty() {
+            return commands;
+        }
+        commands
+            .into_iter()
+            .filter(|command| command.label.to_lowercase().contains(&needle))
+            .collect()
+    }
+}

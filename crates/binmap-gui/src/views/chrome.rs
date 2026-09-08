@@ -4,7 +4,8 @@
 //! chosen per view — 40px title bar, 72px nav rail, 28px status bar, 340px
 //! Inspector. These are the frame; the views live inside it.
 
-use crate::state::{AppState, NavEntry, RunPhase, View};
+use crate::dispatch::{Dispatch, clickable, ignore};
+use crate::state::{Action, AppState, NavEntry, RunPhase, View};
 use crate::theme::{Theme, radius, space, type_scale};
 use crate::widgets::{Badge, Tone};
 use binmap_core::config::TrustTier;
@@ -25,6 +26,7 @@ pub struct TitleBar {
     tier: TrustTier,
     theme: Theme,
     trailing: Vec<AnyElement>,
+    dispatch: Dispatch,
 }
 
 impl TitleBar {
@@ -36,7 +38,13 @@ impl TitleBar {
             tier,
             theme,
             trailing: Vec::new(),
+            dispatch: ignore(),
         }
+    }
+
+    pub fn dispatching(mut self, dispatch: &Dispatch) -> Self {
+        self.dispatch = std::rc::Rc::clone(dispatch);
+        self
     }
 
     pub fn at_commit(mut self, commit: impl Into<SharedString>, dirty: bool) -> Self {
@@ -90,9 +98,10 @@ impl RenderOnce for TitleBar {
                 d.child(Badge::new("dirty", Tone::Warn, self.theme).caps().mono())
             })
             .child(div().flex_1())
-            // The tier is always visible and never raised silently (U9).
+            // The tier is always visible and never raised silently (U9), so
+            // this opens the dialog rather than changing anything.
             .child(
-                div()
+                clickable(div().id("tier"), &self.dispatch, Action::OpenTierDialog)
                     .flex()
                     .flex_none()
                     .items_center()
@@ -102,10 +111,39 @@ impl RenderOnce for TitleBar {
                     .rounded(radius::CONTROL)
                     .border_1()
                     .border_color(c.border_default)
+                    .hover(|d| d.bg(c.surface_hover))
                     .text_size(type_scale::FS_11)
                     .text_color(c.text_secondary)
                     .child("Trust:")
                     .child(div().text_color(tier_colour).child(self.tier.label())),
+            )
+            .child(
+                clickable(div().id("theme"), &self.dispatch, Action::ToggleTheme)
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .w(space::CONTROL_H_SM)
+                    .h(space::CONTROL_H_SM)
+                    .rounded(radius::CONTROL)
+                    .hover(|d| d.bg(c.surface_hover))
+                    .text_size(type_scale::FS_11)
+                    .text_color(c.text_muted)
+                    .child(if self.theme.is_dark() { "☾" } else { "☀" }),
+            )
+            .child(
+                clickable(div().id("palette"), &self.dispatch, Action::TogglePalette)
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .w(space::CONTROL_H_SM)
+                    .h(space::CONTROL_H_SM)
+                    .rounded(radius::CONTROL)
+                    .hover(|d| d.bg(c.surface_hover))
+                    .text_size(type_scale::FS_11)
+                    .text_color(c.text_muted)
+                    .child("⌕"),
             )
             .children(self.trailing)
     }
@@ -121,11 +159,17 @@ pub struct NavRail {
     entries: Vec<NavEntry>,
     selected: Option<View>,
     theme: Theme,
+    dispatch: Dispatch,
 }
 
 impl NavRail {
     pub fn new(entries: Vec<NavEntry>, selected: Option<View>, theme: Theme) -> Self {
-        Self { entries, selected, theme }
+        Self { entries, selected, theme, dispatch: ignore() }
+    }
+
+    pub fn dispatching(mut self, dispatch: &Dispatch) -> Self {
+        self.dispatch = std::rc::Rc::clone(dispatch);
+        self
     }
 }
 
@@ -150,6 +194,7 @@ impl RenderOnce for NavRail {
         let c = self.theme.colours;
         let selected = self.selected;
         let theme = self.theme;
+        let dispatch = self.dispatch;
 
         div()
             .flex()
@@ -162,38 +207,42 @@ impl RenderOnce for NavRail {
             .border_color(c.border_subtle)
             .children(self.entries.into_iter().map(move |entry| {
                 let active = selected == Some(entry.view);
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .gap(space::S2)
-                    .flex_none()
-                    .w_full()
-                    .h(px(52.))
-                    .when(active, |d| d.bg(c.surface_selected).border_l_2().border_color(c.accent))
-                    .child(
-                        div()
-                            .text_size(type_scale::FS_14)
-                            .text_color(if active { c.accent } else { c.text_muted })
-                            .child(glyph(entry.view)),
-                    )
-                    .child(
-                        div()
-                            .text_size(type_scale::FS_11)
-                            .text_color(if active { c.text_primary } else { c.text_muted })
-                            .child(entry.view.label()),
-                    )
-                    .when(entry.findings > 0, |d| {
-                        d.child(
-                            Badge::new(
-                                entry.findings.to_string(),
-                                if active { Tone::Accent } else { Tone::Neutral },
-                                theme,
-                            )
-                            .mono(),
+                clickable(
+                    div().id(SharedString::from(format!("nav-{}", entry.view.label()))),
+                    &dispatch,
+                    Action::SelectView(entry.view),
+                )
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap(space::S2)
+                .flex_none()
+                .w_full()
+                .h(px(52.))
+                .when(active, |d| d.bg(c.surface_selected).border_l_2().border_color(c.accent))
+                .child(
+                    div()
+                        .text_size(type_scale::FS_14)
+                        .text_color(if active { c.accent } else { c.text_muted })
+                        .child(glyph(entry.view)),
+                )
+                .child(
+                    div()
+                        .text_size(type_scale::FS_11)
+                        .text_color(if active { c.text_primary } else { c.text_muted })
+                        .child(entry.view.label()),
+                )
+                .when(entry.findings > 0, |d| {
+                    d.child(
+                        Badge::new(
+                            entry.findings.to_string(),
+                            if active { Tone::Accent } else { Tone::Neutral },
+                            theme,
                         )
-                    })
+                        .mono(),
+                    )
+                })
             }))
     }
 }
@@ -204,6 +253,7 @@ impl RenderOnce for NavRail {
 /// never have to reserve space for a bar that is usually absent.
 #[derive(IntoElement)]
 pub struct StatusBar {
+    dispatch: Dispatch,
     message: SharedString,
     /// `Some((completed, total))` where the total is known.
     progress: Option<(usize, usize)>,
@@ -239,7 +289,19 @@ impl StatusBar {
             None => ("Ready".into(), None, false),
         };
 
-        Self { message, progress, running, findings: state.findings().len(), theme }
+        Self {
+            dispatch: ignore(),
+            message,
+            progress,
+            running,
+            findings: state.findings().len(),
+            theme,
+        }
+    }
+
+    pub fn dispatching(mut self, dispatch: &Dispatch) -> Self {
+        self.dispatch = std::rc::Rc::clone(dispatch);
+        self
     }
 }
 
@@ -291,6 +353,20 @@ impl RenderOnce for StatusBar {
                         .child(format!("{completed}/{total}")),
                 )
             })
+            // A sweep the user cannot stop is a hostile tool.
+            .when(self.running, |d| {
+                d.child(
+                    clickable(div().id("cancel"), &self.dispatch, Action::Cancel)
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .px(space::S6)
+                        .rounded(radius::CHIP)
+                        .hover(|d| d.bg(c.surface_hover))
+                        .text_color(c.text_accent)
+                        .child("Cancel"),
+                )
+            })
             .child(div().flex_1())
             .child(div().flex_none().text_color(c.text_muted).child(format!(
                 "{} finding{}",
@@ -298,10 +374,11 @@ impl RenderOnce for StatusBar {
                 if self.findings == 1 { "" } else { "s" }
             )))
             .child(
-                div()
+                clickable(div().id("palette-hint"), &self.dispatch, Action::TogglePalette)
                     .flex_none()
                     .font_family("JetBrains Mono")
                     .text_color(c.text_disabled)
+                    .hover(|d| d.text_color(c.text_muted))
                     .child("⌘K"),
             )
     }

@@ -14,11 +14,14 @@
 //! scripted events and no window.
 
 pub mod app;
+pub mod dispatch;
 pub mod state;
+pub mod testing;
 pub mod theme;
 pub mod views;
 pub mod widgets;
 
 pub use app::Binmap;
+pub use dispatch::{Dispatch, clickable};
 pub use state::{AppState, NavEntry, RunProgress, View};
 pub use theme::{Appearance, Colours, Theme};

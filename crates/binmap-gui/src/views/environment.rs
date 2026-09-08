@@ -8,12 +8,13 @@
 //! unavailable and says so, which is why the copy states what is lost rather
 //! than only that something is absent.
 
-use crate::state::AppState;
+use crate::dispatch::{Dispatch, clickable, ignore};
+use crate::state::{Action, AppState};
 use crate::theme::{Theme, radius, space, type_scale};
 use crate::widgets::{Badge, Section, Tone};
 use binmap_core::facade::{Probe, ProbeStatus};
 use gpui_kit::prelude::*;
-use gpui_kit::{App, Window, div, px};
+use gpui_kit::{App, SharedString, Window, div, px};
 
 #[derive(IntoElement)]
 pub struct EnvironmentPanel {
@@ -21,6 +22,7 @@ pub struct EnvironmentPanel {
     warnings: usize,
     missing: usize,
     theme: Theme,
+    dispatch: Dispatch,
 }
 
 impl EnvironmentPanel {
@@ -36,7 +38,12 @@ impl EnvironmentPanel {
         let warnings = state.probes().iter().filter(|p| p.status == ProbeStatus::Unusable).count();
         let missing = state.probes().iter().filter(|p| p.status == ProbeStatus::Missing).count();
 
-        Self { groups, warnings, missing, theme }
+        Self { groups, warnings, missing, theme, dispatch: ignore() }
+    }
+
+    pub fn dispatching(mut self, dispatch: &Dispatch) -> Self {
+        self.dispatch = std::rc::Rc::clone(dispatch);
+        self
     }
 }
 
@@ -53,6 +60,8 @@ impl RenderOnce for EnvironmentPanel {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let c = self.theme.colours;
         let theme = self.theme;
+        let dispatch = self.dispatch;
+        let recheck = std::rc::Rc::clone(&dispatch);
 
         div()
             .flex()
@@ -99,9 +108,26 @@ impl RenderOnce for EnvironmentPanel {
                             Badge::new(format!("{} missing", self.missing), Tone::Fail, theme)
                                 .caps(),
                         )
-                    }),
+                    })
+                    // What makes a missing tool recoverable without restarting.
+                    .child(
+                        clickable(div().id("recheck-all"), &recheck, Action::RecheckEnvironment)
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .h(space::CONTROL_H_SM)
+                            .px(space::S8)
+                            .rounded(radius::CONTROL)
+                            .border_1()
+                            .border_color(c.border_default)
+                            .hover(|d| d.bg(c.surface_hover))
+                            .text_size(type_scale::FS_11)
+                            .text_color(c.text_secondary)
+                            .child("Re-check"),
+                    ),
             )
             .children(self.groups.into_iter().map(move |(name, probes)| {
+                let dispatch = std::rc::Rc::clone(&dispatch);
                 Section::titled(name, theme).flush().child(div().flex().flex_col().children(
                     probes.into_iter().map(move |probe| {
                         div()
@@ -150,18 +176,26 @@ impl RenderOnce for EnvironmentPanel {
                             })
                             .when_some(probe.action.clone(), |d, action| {
                                 d.child(
-                                    div()
-                                        .flex()
-                                        .flex_none()
-                                        .items_center()
-                                        .h(space::CONTROL_H_SM)
-                                        .px(space::S8)
-                                        .rounded(radius::CONTROL)
-                                        .border_1()
-                                        .border_color(c.border_default)
-                                        .text_size(type_scale::FS_11)
-                                        .text_color(c.text_secondary)
-                                        .child(action),
+                                    clickable(
+                                        div().id(SharedString::from(format!(
+                                            "probe-{}",
+                                            probe.name
+                                        ))),
+                                        &dispatch,
+                                        Action::RecheckEnvironment,
+                                    )
+                                    .flex()
+                                    .flex_none()
+                                    .items_center()
+                                    .h(space::CONTROL_H_SM)
+                                    .px(space::S8)
+                                    .rounded(radius::CONTROL)
+                                    .border_1()
+                                    .border_color(c.border_default)
+                                    .hover(|d| d.bg(c.surface_hover))
+                                    .text_size(type_scale::FS_11)
+                                    .text_color(c.text_secondary)
+                                    .child(action),
                                 )
                             })
                     }),

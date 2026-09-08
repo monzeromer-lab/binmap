@@ -282,6 +282,14 @@ pub trait Engine: Send + Sync {
     /// is not actually running at.
     fn trust_tier(&self) -> crate::config::TrustTier;
 
+    /// Move the dial.
+    ///
+    /// Always a deliberate act by the user (`U9`, `N7`), which is why this is
+    /// a method the tier dialog calls and never a side effect of anything
+    /// else. The tier lives in the engine because the engine is what enforces
+    /// it; the frame only displays it.
+    fn set_trust_tier(&self, tier: crate::config::TrustTier);
+
     /// Turn a frontier point into a `Cargo.toml` edit, without writing
     /// anything. Writing it is a separate, tier-gated [`Request::Apply`].
     fn propose_configuration(&self, configuration: &BuildConfiguration) -> crate::Result<Proposal>;

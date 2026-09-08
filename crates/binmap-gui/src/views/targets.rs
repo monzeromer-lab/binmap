@@ -4,12 +4,13 @@
 //! can do with it (§2.5). "not analysed" is a fact about the session, not a
 //! failure, and reads as one.
 
-use crate::state::AppState;
+use crate::dispatch::{Dispatch, clickable, ignore};
+use crate::state::{Action, AppState};
 use crate::theme::{Theme, radius, space, type_scale};
 use crate::widgets::{Badge, Section, Tone, badge::fact, eyebrow};
 use binmap_core::traits::{Target, TargetFamily};
 use gpui_kit::prelude::*;
-use gpui_kit::{App, Window, div, px};
+use gpui_kit::{App, SharedString, Window, div, px};
 
 /// The 208px sidebar listing every target, grouped by family.
 #[derive(IntoElement)]
@@ -17,6 +18,7 @@ pub struct TargetList {
     groups: Vec<(TargetFamily, Vec<Target>)>,
     selected: Option<String>,
     theme: Theme,
+    dispatch: Dispatch,
 }
 
 impl TargetList {
@@ -28,7 +30,17 @@ impl TargetList {
                 (family, targets.into_iter().cloned().collect::<Vec<Target>>())
             })
             .collect();
-        Self { groups, selected: state.selected_target().map(|t| t.id.clone()), theme }
+        Self {
+            groups,
+            selected: state.selected_target().map(|t| t.id.clone()),
+            theme,
+            dispatch: ignore(),
+        }
+    }
+
+    pub fn dispatching(mut self, dispatch: &Dispatch) -> Self {
+        self.dispatch = std::rc::Rc::clone(dispatch);
+        self
     }
 }
 
@@ -37,6 +49,7 @@ impl RenderOnce for TargetList {
         let c = self.theme.colours;
         let theme = self.theme;
         let selected = self.selected;
+        let dispatch = self.dispatch;
         let total: usize = self.groups.iter().map(|(_, targets)| targets.len()).sum();
 
         div()
@@ -63,6 +76,7 @@ impl RenderOnce for TargetList {
             )
             .children(self.groups.into_iter().map(move |(family, targets)| {
                 let selected = selected.clone();
+                let dispatch = std::rc::Rc::clone(&dispatch);
                 div()
                     .flex()
                     .flex_col()
@@ -80,32 +94,37 @@ impl RenderOnce for TargetList {
                     )
                     .children(targets.into_iter().map(move |target| {
                         let active = selected.as_deref() == Some(target.id.as_str());
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_none()
-                            .gap(space::S2)
-                            .px(space::S10)
-                            .py(space::S6)
-                            .when(active, |d| {
-                                d.bg(c.surface_selected).border_l_2().border_color(c.accent)
-                            })
-                            .child(
-                                div()
-                                    .font_family("JetBrains Mono")
-                                    .text_size(type_scale::FS_12)
-                                    .text_color(if active { c.text_primary } else { c.text_body })
-                                    .child(target.name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(type_scale::FS_11)
-                                    .text_color(c.text_muted)
-                                    // What this target can do, in plain words —
-                                    // never a capability list the reader has to
-                                    // decode.
-                                    .child(target.capabilities.sentence()),
-                            )
+                        clickable(
+                            div().id(SharedString::from(format!("target-{}", target.id))),
+                            &dispatch,
+                            Action::SelectTarget(target.id.clone()),
+                        )
+                        .flex()
+                        .flex_col()
+                        .flex_none()
+                        .gap(space::S2)
+                        .px(space::S10)
+                        .py(space::S6)
+                        .when(active, |d| {
+                            d.bg(c.surface_selected).border_l_2().border_color(c.accent)
+                        })
+                        .when(!active, |d| d.hover(|d| d.bg(c.surface_hover)))
+                        .child(
+                            div()
+                                .font_family("JetBrains Mono")
+                                .text_size(type_scale::FS_12)
+                                .text_color(if active { c.text_primary } else { c.text_body })
+                                .child(target.name.clone()),
+                        )
+                        .child(
+                            div()
+                                .text_size(type_scale::FS_11)
+                                .text_color(c.text_muted)
+                                // What this target can do, in plain words —
+                                // never a capability list the reader has to
+                                // decode.
+                                .child(target.capabilities.sentence()),
+                        )
                     }))
             }))
     }
@@ -118,11 +137,24 @@ pub struct TargetView {
     target: Option<Target>,
     root: Option<String>,
     theme: Theme,
+    dispatch: Dispatch,
+    busy: bool,
 }
 
 impl TargetView {
     pub fn of(state: &AppState, root: Option<String>, theme: Theme) -> Self {
-        Self { target: state.selected_target().cloned(), root, theme }
+        Self {
+            target: state.selected_target().cloned(),
+            root,
+            theme,
+            dispatch: ignore(),
+            busy: state.is_busy(),
+        }
+    }
+
+    pub fn dispatching(mut self, dispatch: &Dispatch) -> Self {
+        self.dispatch = std::rc::Rc::clone(dispatch);
+        self
     }
 }
 
@@ -196,16 +228,27 @@ impl RenderOnce for TargetView {
                         .flex_col()
                         .gap(space::S6)
                         .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .h(space::CONTROL_H_LG)
-                                .rounded(radius::CONTROL)
-                                .bg(c.accent)
-                                .text_color(c.on_accent)
-                                .text_size(type_scale::FS_13)
-                                .child("Sweep build configurations"),
+                            clickable(
+                                div().id("sweep"),
+                                &self.dispatch,
+                                if self.busy { Action::Cancel } else { Action::StartSweep },
+                            )
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .h(space::CONTROL_H_LG)
+                            .rounded(radius::CONTROL)
+                            .bg(if self.busy { c.surface_active } else { c.accent })
+                            .hover(|d| {
+                                d.bg(if self.busy { c.surface_hover } else { c.accent_hover })
+                            })
+                            .text_color(if self.busy { c.text_body } else { c.on_accent })
+                            .text_size(type_scale::FS_13)
+                            .child(if self.busy {
+                                "Cancel — everything measured is kept"
+                            } else {
+                                "Sweep build configurations"
+                            }),
                         )
                         .child(div().text_size(type_scale::FS_11).text_color(c.text_muted).child(
                             "The sweep sets profile settings per build. \

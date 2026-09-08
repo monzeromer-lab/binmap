@@ -24,12 +24,14 @@
 //! `gpui-component` ships area, bar, candlestick, line, pie, radar and sankey,
 //! and no scatter. That answers its open question 2.
 
+use crate::dispatch::{Dispatch, clickable, ignore};
+use crate::state::Action;
 use crate::theme::{Theme, radius, space, type_scale};
 use crate::widgets::{Badge, Section, Tone, eyebrow};
 use binmap_core::facade::{Measurement, SweepSummary};
 use binmap_core::gate::{GateResult, VerificationReport};
 use gpui_kit::prelude::*;
-use gpui_kit::{App, Bounds, Pixels, Window, canvas, div, point, px, quad, size};
+use gpui_kit::{App, Bounds, Pixels, SharedString, Window, canvas, div, point, px, quad, size};
 
 /// How many bytes, as a person reads them.
 fn bytes(value: u64) -> String {
@@ -77,11 +79,17 @@ pub struct ProfileLab {
     sweep: Option<SweepSummary>,
     selected: Option<String>,
     theme: Theme,
+    dispatch: Dispatch,
 }
 
 impl ProfileLab {
     pub fn new(sweep: Option<SweepSummary>, selected: Option<String>, theme: Theme) -> Self {
-        Self { sweep, selected, theme }
+        Self { sweep, selected, theme, dispatch: ignore() }
+    }
+
+    pub fn dispatching(mut self, dispatch: &Dispatch) -> Self {
+        self.dispatch = std::rc::Rc::clone(dispatch);
+        self
     }
 }
 
@@ -90,8 +98,9 @@ impl RenderOnce for ProfileLab {
         let c = self.theme.colours;
         let theme = self.theme;
 
+        let dispatch = self.dispatch;
         let Some(sweep) = self.sweep else {
-            return empty_state(theme).into_any_element();
+            return empty_state(theme, &dispatch).into_any_element();
         };
 
         let rejected = sweep.rejected();
@@ -170,6 +179,7 @@ impl RenderOnce for ProfileLab {
                             &sweep,
                             selected.as_ref(),
                             theme,
+                            &dispatch,
                         )),
                     ))
                     .when_some(selected, |d, measurement| {
@@ -184,7 +194,7 @@ impl RenderOnce for ProfileLab {
     }
 }
 
-fn empty_state(theme: Theme) -> impl IntoElement {
+fn empty_state(theme: Theme, dispatch: &Dispatch) -> impl IntoElement {
     let c = theme.colours;
     div()
         .flex()
@@ -208,6 +218,20 @@ fn empty_state(theme: Theme) -> impl IntoElement {
                      for each — including the configurations that broke the tests, because a \
                      near miss is informative.",
             ),
+        )
+        .child(
+            clickable(div().id("sweep-empty"), dispatch, Action::StartSweep)
+                .flex()
+                .items_center()
+                .justify_center()
+                .h(space::CONTROL_H_LG)
+                .px(space::S16)
+                .rounded(radius::CONTROL)
+                .bg(c.accent)
+                .hover(|d| d.bg(c.accent_hover))
+                .text_color(c.on_accent)
+                .text_size(type_scale::FS_13)
+                .child("Sweep build configurations"),
         )
         .child(div().text_size(type_scale::FS_11).text_color(c.text_muted).child(
             "The sweep sets profile settings per build. Your Cargo.toml is never \
@@ -458,9 +482,15 @@ fn legend(
 }
 
 /// The configuration table, rejected candidates included.
-fn table(sweep: &SweepSummary, selected: Option<&Measurement>, theme: Theme) -> impl IntoElement {
+fn table(
+    sweep: &SweepSummary,
+    selected: Option<&Measurement>,
+    theme: Theme,
+    dispatch: &Dispatch,
+) -> impl IntoElement {
     let c = theme.colours;
     let selected_id = selected.map(|m| m.id.clone());
+    let dispatch = std::rc::Rc::clone(dispatch);
 
     let header = div()
         .flex()
@@ -491,70 +521,77 @@ fn table(sweep: &SweepSummary, selected: Option<&Measurement>, theme: Theme) -> 
                 let is_selected = selected_id.as_deref() == Some(m.id.as_str());
                 let rejected = !m.passed();
 
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .flex_none()
-                    .h(space::ROW_H)
-                    .px(space::S12)
-                    .gap(space::S8)
-                    .border_b_1()
-                    .border_color(c.border_subtle)
-                    .when(is_selected, |d| d.bg(c.surface_selected))
-                    .when(m.on_frontier && !is_selected, |d| d.bg(c.surface_raised))
-                    .text_size(type_scale::FS_11)
-                    .font_family("JetBrains Mono")
-                    .child(
-                        div()
-                            .w(px(166.))
-                            .flex_none()
-                            .overflow_hidden()
-                            // Rejected candidates stay, greyed. A near miss is
-                            // informative and a table that drops them teaches
-                            // the reader nothing about their own build.
-                            .text_color(if rejected { c.text_disabled } else { c.text_body })
-                            .child(short_flags(&m.flags)),
-                    )
-                    .child(div().flex_1().min_w_0())
-                    .child(
-                        div()
-                            .w(px(80.))
-                            .flex_none()
-                            .text_color(c.text_body)
-                            .child(m.size_bytes.map(bytes).unwrap_or_else(|| "—".into())),
-                    )
-                    .child(
-                        div()
-                            .w(px(80.))
-                            .flex_none()
-                            .text_color(match m.size_delta {
-                                Some(d) if d < 0 => c.delta_improve,
-                                Some(d) if d > 0 => c.delta_regress,
-                                _ => c.delta_flat,
-                            })
-                            .child(m.size_delta.map(delta_label).unwrap_or_else(|| "—".into())),
-                    )
-                    .child(
-                        div()
-                            .w(px(78.))
-                            .flex_none()
-                            .text_color(c.text_muted)
-                            .child(m.runtime_nanos.map(millis).unwrap_or_else(|| "—".into())),
-                    )
-                    .child(
-                        div()
-                            .w(px(64.))
-                            .flex_none()
-                            .text_color(c.text_disabled)
-                            .child(m.build_time_nanos.map(millis).unwrap_or_else(|| "—".into())),
-                    )
-                    .child(div().w(px(116.)).flex_none().child(match m.rejected_by() {
+                clickable(
+                    div().id(SharedString::from(format!("row-{}", m.id))),
+                    &dispatch,
+                    Action::SelectConfiguration(m.id.clone()),
+                )
+                .flex()
+                .flex_row()
+                .items_center()
+                .flex_none()
+                .h(space::ROW_H)
+                .px(space::S12)
+                .gap(space::S8)
+                .border_b_1()
+                .border_color(c.border_subtle)
+                .when(is_selected, |d| d.bg(c.surface_selected))
+                .when(m.on_frontier && !is_selected, |d| d.bg(c.surface_raised))
+                .when(!is_selected, |d| d.hover(|d| d.bg(c.surface_hover)))
+                .text_size(type_scale::FS_11)
+                .font_family("JetBrains Mono")
+                .child(
+                    div()
+                        .w(px(166.))
+                        .flex_none()
+                        .overflow_hidden()
+                        // Rejected candidates stay, greyed. A near miss is
+                        // informative and a table that drops them teaches
+                        // the reader nothing about their own build.
+                        .text_color(if rejected { c.text_disabled } else { c.text_body })
+                        .child(short_flags(&m.flags)),
+                )
+                .child(div().flex_1().min_w_0())
+                .child(
+                    div()
+                        .w(px(80.))
+                        .flex_none()
+                        .text_color(c.text_body)
+                        .child(m.size_bytes.map(bytes).unwrap_or_else(|| "—".into())),
+                )
+                .child(
+                    div()
+                        .w(px(80.))
+                        .flex_none()
+                        .text_color(match m.size_delta {
+                            Some(d) if d < 0 => c.delta_improve,
+                            Some(d) if d > 0 => c.delta_regress,
+                            _ => c.delta_flat,
+                        })
+                        .child(m.size_delta.map(delta_label).unwrap_or_else(|| "—".into())),
+                )
+                .child(
+                    div()
+                        .w(px(78.))
+                        .flex_none()
+                        .text_color(c.text_muted)
+                        .child(m.runtime_nanos.map(millis).unwrap_or_else(|| "—".into())),
+                )
+                .child(
+                    div()
+                        .w(px(64.))
+                        .flex_none()
+                        .text_color(c.text_disabled)
+                        .child(m.build_time_nanos.map(millis).unwrap_or_else(|| "—".into())),
+                )
+                .child(div().w(px(116.)).flex_none().child(
+                    match m.rejected_by() {
                         // The failing gate is named. "Rejected" alone tells the
                         // reader nothing they can act on.
                         Some(gate) => Badge::new(gate.label(), Tone::Fail, theme).caps(),
                         None => Badge::new("pass", Tone::Pass, theme).caps(),
-                    }))
+                    },
+                ))
             }),
         ),
     )

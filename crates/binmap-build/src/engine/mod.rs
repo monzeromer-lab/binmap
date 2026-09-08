@@ -113,12 +113,6 @@ impl BinmapEngine {
         self.inner.runner.store()
     }
 
-    /// Raise or lower the tier. Always a deliberate act by the user, which is
-    /// why it is a method and never a side effect of anything else.
-    pub fn set_trust_tier(&self, tier: TrustTier) {
-        self.inner.config.write().expect("config poisoned").trust_tier = tier;
-    }
-
     /// The state of one run, for the session artifact.
     pub fn run_state(&self, run: &RunId) -> Option<SweepState> {
         self.inner.runs.lock().expect("runs poisoned").get(run).cloned()
@@ -501,6 +495,10 @@ impl Engine for BinmapEngine {
 
     fn trust_tier(&self) -> TrustTier {
         self.inner.config.read().expect("config poisoned").trust_tier
+    }
+
+    fn set_trust_tier(&self, tier: TrustTier) {
+        self.inner.config.write().expect("config poisoned").trust_tier = tier;
     }
 
     fn proposals(&self) -> Vec<Proposal> {

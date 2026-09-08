@@ -8,33 +8,15 @@
 //! from a `Finding`. That is DESIGN-GUI §6.5's "enforce by construction": there
 //! is no code path here that draws a claim without its provenance.
 
+use crate::dispatch::{Dispatch, clickable, ignore};
+use crate::state::Action;
+pub use crate::state::InspectorTab as Tab;
 use crate::theme::{Theme, radius, space, type_scale};
 use crate::widgets::{Badge, ProvenanceBadge, Tone, eyebrow};
 use binmap_core::evidence::Evidence;
 use binmap_core::finding::Finding;
 use gpui_kit::prelude::*;
-use gpui_kit::{App, Window, div, px};
-
-/// Which tab of the Inspector is showing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Tab {
-    #[default]
-    Hypothesis,
-    Evidence,
-    Proposal,
-}
-
-impl Tab {
-    pub fn label(self) -> &'static str {
-        match self {
-            Tab::Hypothesis => "Hypothesis",
-            Tab::Evidence => "Evidence",
-            Tab::Proposal => "Proposal",
-        }
-    }
-
-    pub const ALL: [Tab; 3] = [Tab::Hypothesis, Tab::Evidence, Tab::Proposal];
-}
+use gpui_kit::{App, SharedString, Window, div, px};
 
 #[derive(IntoElement)]
 pub struct Inspector {
@@ -44,6 +26,7 @@ pub struct Inspector {
     measured: usize,
     inferred: usize,
     theme: Theme,
+    dispatch: Dispatch,
 }
 
 impl Inspector {
@@ -68,7 +51,12 @@ impl Inspector {
                 )
             })
             .count();
-        Self { finding, evidence, tab, measured, inferred, theme }
+        Self { finding, evidence, tab, measured, inferred, theme, dispatch: ignore() }
+    }
+
+    pub fn dispatching(mut self, dispatch: &Dispatch) -> Self {
+        self.dispatch = std::rc::Rc::clone(dispatch);
+        self
     }
 }
 
@@ -76,6 +64,7 @@ impl RenderOnce for Inspector {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let c = self.theme.colours;
         let theme = self.theme;
+        let dispatch = self.dispatch;
 
         let header = div()
             .flex()
@@ -164,23 +153,31 @@ impl RenderOnce for Inspector {
                     .border_color(c.border_subtle)
                     .children(Tab::ALL.into_iter().map(move |candidate| {
                         let active = candidate == tab;
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(space::S4)
-                            .text_size(type_scale::FS_12)
-                            .text_color(if active { c.text_primary } else { c.text_muted })
-                            .when(active, |d| d.border_b_2().border_color(c.accent))
-                            .child(candidate.label())
-                            .when(candidate == Tab::Evidence && evidence_count > 0, |d| {
+                        clickable(
+                            div().id(SharedString::from(format!("tab-{}", candidate.label()))),
+                            &dispatch,
+                            Action::SelectTab(candidate),
+                        )
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(space::S4)
+                        .text_size(type_scale::FS_12)
+                        .text_color(if active { c.text_primary } else { c.text_muted })
+                        .when(active, |d| d.border_b_2().border_color(c.accent))
+                        .when(!active, |d| d.hover(|d| d.text_color(c.text_secondary)))
+                        .child(candidate.label())
+                        .when(
+                            candidate == Tab::Evidence && evidence_count > 0,
+                            |d| {
                                 d.child(
                                     div()
                                         .font_family("JetBrains Mono")
                                         .text_color(c.text_muted)
                                         .child(evidence_count.to_string()),
                                 )
-                            })
+                            },
+                        )
                     })),
             )
             .child(
