@@ -11,6 +11,7 @@ pub mod cargo;
 pub mod engine;
 pub mod environment;
 pub mod project;
+pub mod settings;
 pub mod sweep;
 
 pub use cargo::CargoBuildSystem;

@@ -1,0 +1,17 @@
+# A narrow sweep, chosen to demonstrate one thing: the gates run under the
+# configuration they are judging.
+#
+# `overflow-checks` is the axis that matters here. The suite asserts that
+# `checksum` wraps, which is true under `overflow-checks = false` and a panic
+# under `true` — so every overflow-checked configuration must be rejected on
+# TestsPass, and every other one must pass. With a fixed gate command they all
+# pass identically, and the tool recommends one that breaks the suite.
+
+[sweep]
+opt-level = ["3", "s"]
+lto = [false, "fat"]
+overflow-checks = [false, true]
+codegen-units = [16]
+panic = ["unwind"]
+strip = ["none"]
+debug = [0]

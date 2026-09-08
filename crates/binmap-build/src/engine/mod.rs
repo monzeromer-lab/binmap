@@ -68,7 +68,9 @@ impl BinmapEngine {
     /// If the project declares a benchmark and hyperfine is installed, runtime
     /// becomes an objective; otherwise it does not, and the frontier ranks on
     /// what was actually measured. We never invent a workload.
-    pub fn open(config: ProjectConfig, gates: GatePlan) -> Result<Self> {
+    pub fn open(mut config: ProjectConfig, gates: GatePlan) -> Result<Self> {
+        // The project's own settings, if it has any. F0.2's "configurable".
+        crate::settings::apply(&mut config)?;
         let benchmark = config.benchmark.clone().and_then(|command| {
             let runner = ToolRunner::new(EvidenceStore::new(), config.root.clone());
             HyperfineBenchmark::new(runner, command)

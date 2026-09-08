@@ -1,0 +1,13 @@
+[package]
+name = "generics"
+version = "0.1.0"
+edition = "2024"
+description = """
+Reference corpus: a generics-heavy library whose test suite fails under some \
+build configurations and not others. It exists to prove the gates verify the \
+configuration under test rather than a fixed build."""
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
