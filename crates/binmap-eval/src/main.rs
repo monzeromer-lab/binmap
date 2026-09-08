@@ -158,9 +158,9 @@ impl EventSink for Printer {
             EngineEvent::Finding { finding, .. } => {
                 println!(
                     "  {} {:<11} {}",
-                    finding.provenance.glyph(),
-                    finding.confidence.label(),
-                    finding.title
+                    finding.provenance().glyph(),
+                    finding.confidence().label(),
+                    finding.title()
                 );
             }
             EngineEvent::Finished { summary, .. } => println!("finished: {summary}"),

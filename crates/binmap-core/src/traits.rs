@@ -72,6 +72,23 @@ pub trait BuildSystem: Send + Sync {
         target: &Target,
         configuration: &BuildConfiguration,
     ) -> crate::Result<BuildOutcome>;
+
+    /// The environment this configuration is built under.
+    ///
+    /// The verification gates run under exactly this environment, so a gate
+    /// verdict is about the configuration that was built rather than about
+    /// whatever the plain build command happens to produce. Getting this wrong
+    /// means a ninety-six point sweep gates every candidate on the same
+    /// baseline build and still reports "tests passing" — which is a wrong
+    /// answer delivered confidently, and the failure this method exists to
+    /// prevent.
+    ///
+    /// It must include the target directory, so the gates build where the
+    /// sweep built and never in the user's own cache (`F0.8`).
+    fn build_environment(
+        &self,
+        configuration: &BuildConfiguration,
+    ) -> std::collections::BTreeMap<String, String>;
 }
 
 /// Reads a built artifact's structure.

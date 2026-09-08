@@ -50,6 +50,17 @@ impl BuildSystem for FakeCargo {
         Ok(vec![target()])
     }
 
+    /// The same shape a real cargo backend returns, so the gate tests exercise
+    /// the real threading rather than a stub that always agrees.
+    fn build_environment(&self, configuration: &BuildConfiguration) -> BTreeMap<String, String> {
+        let mut env = configuration.cargo_profile_env();
+        env.insert(
+            "CARGO_TARGET_DIR".to_string(),
+            self.directory.join(configuration.name()).display().to_string(),
+        );
+        env
+    }
+
     fn build(&self, _target: &Target, configuration: &BuildConfiguration) -> Result<BuildOutcome> {
         self.builds.fetch_add(1, Ordering::SeqCst);
         let name = configuration.name();
@@ -198,8 +209,8 @@ fn findings_stream_as_they_are_discovered_rather_than_arriving_in_a_batch() {
 
     // Every finding is grounded, by construction.
     for finding in events.findings() {
-        assert!(!finding.evidence.is_empty());
-        for id in &finding.evidence {
+        assert!(!finding.evidence().is_empty());
+        for id in finding.evidence() {
             assert!(fixture.store.issued(id));
         }
     }
@@ -348,18 +359,18 @@ fn the_frontier_finding_is_derived_and_says_which_rule_derived_it() {
     let frontier: Vec<_> = events
         .findings()
         .into_iter()
-        .filter(|f| f.kind == FindingKind::FrontierPoint)
+        .filter(|f| *f.kind() == FindingKind::FrontierPoint)
         .collect();
     assert!(!frontier.is_empty());
     for finding in &frontier {
         // A measurement is Certain; a conclusion about measurements is not the
         // same thing, and the badge says so.
         assert_eq!(
-            finding.provenance,
+            *finding.provenance(),
             Provenance::Derived { rule: "pareto-dominance".into() }
         );
-        assert_eq!(finding.confidence, Confidence::High);
-        assert_eq!(finding.provenance.glyph(), '◈');
+        assert_eq!(finding.confidence(), Confidence::High);
+        assert_eq!(finding.provenance().glyph(), '◈');
     }
 }
 

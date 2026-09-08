@@ -34,8 +34,8 @@ impl ProvenanceBadge {
     /// construction rather than by review.
     pub fn of(finding: &Finding, theme: Theme) -> Self {
         Self {
-            provenance: finding.provenance.clone(),
-            confidence: finding.confidence,
+            provenance: finding.provenance().clone(),
+            confidence: finding.confidence(),
             theme,
             verbose: false,
         }

@@ -55,12 +55,12 @@ impl Inspector {
         theme: Theme,
     ) -> Self {
         let measured =
-            all.iter().filter(|f| matches!(f.provenance, binmap_core::Provenance::Measured)).count();
+            all.iter().filter(|f| matches!(f.provenance(), binmap_core::Provenance::Measured)).count();
         let inferred = all
             .iter()
             .filter(|f| {
                 matches!(
-                    f.provenance,
+                    f.provenance(),
                     binmap_core::Provenance::InferredNatively { .. }
                         | binmap_core::Provenance::InferredExternally { .. }
                 )
@@ -204,7 +204,7 @@ impl RenderOnce for Inspector {
                         div()
                             .text_size(type_scale::FS_14)
                             .text_color(c.text_primary)
-                            .child(finding.title.clone()),
+                            .child(finding.title().to_string()),
                     )
                     .map(|d| match tab {
                         Tab::Hypothesis => d.child(hypothesis(&finding, theme)),
@@ -222,18 +222,18 @@ impl RenderOnce for Inspector {
 
 fn hypothesis(finding: &Finding, theme: Theme) -> impl IntoElement {
     let c = theme.colours;
-    let impact = finding.impact;
+    let impact = finding.impact();
 
     div()
         .flex()
         .flex_col()
         .gap(space::S8)
-        .when(!finding.detail.is_empty(), |d| {
+        .when(!finding.detail().is_empty(), |d| {
             d.child(
                 div()
                     .text_size(type_scale::FS_12)
                     .text_color(c.text_body)
-                    .child(finding.detail.clone()),
+                    .child(finding.detail().to_string()),
             )
         })
         .child(
@@ -241,7 +241,7 @@ fn hypothesis(finding: &Finding, theme: Theme) -> impl IntoElement {
                 .font_family("JetBrains Mono")
                 .text_size(type_scale::FS_11)
                 .text_color(c.text_muted)
-                .child(finding.location.describe()),
+                .child(finding.location().describe()),
         )
         .when_some(impact.size_bytes, |d, bytes| {
             // Inside the noise floor draws flat — neither green nor red.

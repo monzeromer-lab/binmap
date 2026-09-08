@@ -276,10 +276,10 @@ impl Engine for BinmapEngine {
 
     fn evidence(&self, finding: &str) -> Vec<Evidence> {
         let findings = self.inner.findings.lock().expect("findings poisoned");
-        let Some(finding) = findings.iter().find(|f| f.id == finding) else {
+        let Some(finding) = findings.iter().find(|f| f.id() == finding) else {
             return Vec::new();
         };
-        finding.evidence.iter().filter_map(|id| self.inner.runner.store().get(id)).collect()
+        finding.evidence().iter().filter_map(|id| self.inner.runner.store().get(id)).collect()
     }
 
     fn proposals(&self) -> Vec<Proposal> {

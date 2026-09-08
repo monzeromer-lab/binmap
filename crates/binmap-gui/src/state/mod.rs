@@ -221,12 +221,12 @@ impl AppState {
     pub fn findings_for(&self, view: View) -> Vec<&Finding> {
         self.findings
             .iter()
-            .filter(|finding| view_for_kind(&finding.kind) == Some(view))
+            .filter(|finding| view_for_kind(&finding.kind()) == Some(view))
             .collect()
     }
 
     pub fn select_finding(&mut self, id: &str) -> bool {
-        if !self.findings.iter().any(|finding| finding.id == id) {
+        if !self.findings.iter().any(|finding| finding.id() == id) {
             return false;
         }
         self.selected_finding = Some(id.to_string());
@@ -237,7 +237,7 @@ impl AppState {
     /// state it renders rather than a reason to hide.
     pub fn selected_finding(&self) -> Option<&Finding> {
         let id = self.selected_finding.as_ref()?;
-        self.findings.iter().find(|finding| &finding.id == id)
+        self.findings.iter().find(|finding| &finding.id() == id)
     }
 
     // -- runs -------------------------------------------------------------
@@ -316,13 +316,13 @@ impl AppState {
             }
             EngineEvent::Finding { finding, .. } => {
                 let finding = *finding;
-                match self.findings.iter_mut().find(|existing| existing.id == finding.id) {
+                match self.findings.iter_mut().find(|existing| existing.id() == finding.id()) {
                     Some(existing) => *existing = finding,
                     None => {
                         // The first finding of a run selects itself, so the
                         // Inspector has something to show without a click.
                         if self.selected_finding.is_none() {
-                            self.selected_finding = Some(finding.id.clone());
+                            self.selected_finding = Some(finding.id().to_string());
                         }
                         self.findings.push(finding);
                     }

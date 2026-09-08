@@ -203,7 +203,7 @@ pub fn import(artifact: SessionArtifact) -> Result<ImportOutcome> {
     for finding in &artifact.findings {
         match finding.revalidate(&evidence) {
             Ok(()) => findings.push(finding.clone()),
-            Err(_) => ungrounded.push(finding.id.clone()),
+            Err(_) => ungrounded.push(finding.id().to_string()),
         }
     }
 

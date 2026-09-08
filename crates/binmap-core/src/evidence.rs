@@ -107,9 +107,36 @@ pub struct Evidence {
 }
 
 impl Evidence {
-    /// Whether the recorded output still hashes to the recorded digest.
+    /// The digest this record should carry.
+    ///
+    /// It covers the identifier, the tool, its arguments, its working
+    /// directory, the exit code and the output — the whole record, not only
+    /// the output. Digesting the output alone let a forged record keep a valid
+    /// digest while its command line said something else entirely, which an
+    /// audit found and which defeats the whole point of recording the command.
+    pub fn expected_digest(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(self.id.0.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(self.invocation.tool.as_bytes());
+        for argument in &self.invocation.arguments {
+            hasher.update([0u8]);
+            hasher.update(argument.as_bytes());
+        }
+        hasher.update([0u8]);
+        hasher.update(
+            self.invocation.working_directory.as_deref().unwrap_or_default().as_bytes(),
+        );
+        hasher.update([0u8]);
+        hasher.update(self.exit_code.to_le_bytes());
+        hasher.update([0u8]);
+        hasher.update(self.output.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// Whether the record still hashes to the digest it carries.
     pub fn digest_matches(&self) -> bool {
-        digest_of(&self.output) == self.digest
+        self.expected_digest() == self.digest
     }
 }
 
@@ -169,13 +196,14 @@ impl EvidenceStore {
         exit_code: i32,
     ) -> EvidenceId {
         let output = output.into();
-        let evidence = Evidence {
+        let mut evidence = Evidence {
             id: pending.id.clone(),
             invocation: pending.invocation,
-            digest: digest_of(&output),
+            digest: String::new(),
             output,
             exit_code,
         };
+        evidence.digest = evidence.expected_digest();
         let mut inner = self.inner.write().expect("evidence store poisoned");
         inner.pending.remove(&pending.id);
         inner.records.insert(pending.id.clone(), evidence);
@@ -214,9 +242,15 @@ impl EvidenceStore {
 
     /// Re-populate a store from an imported session artifact.
     ///
-    /// Import is the one path by which records enter without a tool having run
-    /// here, so it verifies each digest and refuses the ones that do not match
-    /// rather than adopting them quietly. Returns the identifiers it refused.
+    /// This is the one path by which a record enters without a tool having run
+    /// here, and it is therefore the one place identifiers arrive from
+    /// outside. It is not a hole in "nothing else can mint one": an adopted
+    /// record must hash to the digest it carries, over its whole content —
+    /// identifier, command line, exit code and output — so a forged record
+    /// cannot be given an identifier that a store would honour without also
+    /// forging a `sha256` preimage.
+    ///
+    /// Returns the identifiers it refused.
     pub fn adopt(&self, records: impl IntoIterator<Item = Evidence>) -> Vec<EvidenceId> {
         let mut refused = Vec::new();
         let mut inner = self.inner.write().expect("evidence store poisoned");
@@ -236,11 +270,7 @@ impl EvidenceStore {
     }
 }
 
-pub(crate) fn digest_of(output: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(output.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
+
 
 #[cfg(test)]
 mod tests {
@@ -257,6 +287,43 @@ mod tests {
         let id = store.complete(pending, "0000000000001234 T main", 0);
         assert!(store.issued(&id));
         assert!(store.incomplete().is_empty());
+    }
+
+    #[test]
+    fn the_digest_covers_the_command_line_not_only_the_output() {
+        // A record whose output is untouched but whose command line has been
+        // rewritten must not still verify. Digesting the output alone let a
+        // forged invocation keep a valid digest, which defeats the point of
+        // recording the command at all.
+        let store = EvidenceStore::new();
+        let pending = store.begin(ToolInvocation::new("size", ["app"]));
+        let id = store.complete(pending, "text 1024", 0);
+
+        let mut forged = store.get(&id).unwrap();
+        forged.invocation = ToolInvocation::new("size", ["some-other-binary"]);
+        assert!(!forged.digest_matches(), "a rewritten command line still verified");
+
+        let mut relabelled = store.get(&id).unwrap();
+        relabelled.exit_code = 1;
+        assert!(!relabelled.digest_matches(), "a rewritten exit code still verified");
+    }
+
+    #[test]
+    fn a_forged_record_cannot_be_adopted_into_a_live_store() {
+        // adopt() is the only path by which an identifier arrives from
+        // outside. It is not a hole in "nothing else can mint one": the record
+        // has to hash to its own digest over its whole content.
+        let store = EvidenceStore::new();
+        let forged = Evidence {
+            id: EvidenceId("ev-000001".into()),
+            invocation: ToolInvocation::new("cargo", ["build"]),
+            output: "it definitely worked".into(),
+            digest: "0".repeat(64),
+            exit_code: 0,
+        };
+        let refused = store.adopt([forged.clone()]);
+        assert_eq!(refused, vec![forged.id.clone()]);
+        assert!(!store.issued(&forged.id), "a forged record entered a live store");
     }
 
     #[test]

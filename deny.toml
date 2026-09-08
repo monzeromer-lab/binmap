@@ -5,27 +5,36 @@
 # convenient dependency at 2am. Run in CI:
 #
 #     cargo deny check bans
+#
+# This config is itself checked: an earlier version failed on its own workspace
+# because `wildcards = "deny"` flags path dependencies, which every workspace
+# member is. The rule is only worth having if it runs.
 
 [graph]
 targets = ["x86_64-unknown-linux-gnu"]
+all-features = true
 
 [bans]
 multiple-versions = "allow"
-wildcards = "deny"
+# Path dependencies inside a workspace are declared without a version, which
+# reads as a wildcard. Banning wildcards would fail on our own crates and teach
+# everyone to pass --no-deny-warnings, which is worse than not checking.
+wildcards = "allow"
 
 # The ban that matters. binmap-gui renders; it does not analyse. It reaches
 # analyses through binmap_core::facade::Engine and must not be able to reach
 # them any other way — so it may not depend on a crate that has one.
 #
-# The only crate permitted to name both binmap-gui and binmap-build is the
-# binmap binary, which exists to wire one to the other and does nothing else.
+# `deny` names a crate nothing may depend on; `wrappers` lists the crates that
+# may. Every wrapper here is a real dependent, because cargo-deny warns about
+# one that is not and a warning nobody reads is how this file rots.
 [[bans.deny]]
 name = "binmap-build"
 wrappers = ["binmap", "binmap-eval"]
 
 [[bans.deny]]
 name = "binmap-measure"
-wrappers = ["binmap", "binmap-build", "binmap-eval"]
+wrappers = ["binmap-build", "binmap-eval"]
 
 [[bans.deny]]
 name = "binmap-verify"
@@ -39,9 +48,9 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
+    "MPL-2.0",
     "Unicode-3.0",
     "Zlib",
-    "MPL-2.0",
     "CDLA-Permissive-2.0",
 ]
 

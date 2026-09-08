@@ -123,14 +123,14 @@ fn the_first_finding_selects_itself_so_the_inspector_is_never_blank_for_nothing(
         run: run(),
         finding: Box::new(finding("f0", FindingKind::Configuration)),
     });
-    assert_eq!(state.selected_finding().map(|f| f.id.as_str()), Some("f0"));
+    assert_eq!(state.selected_finding().map(|f| f.id()), Some("f0"));
 
     // A second finding does not steal the selection.
     state.apply(EngineEvent::Finding {
         run: run(),
         finding: Box::new(finding("f1", FindingKind::Configuration)),
     });
-    assert_eq!(state.selected_finding().map(|f| f.id.as_str()), Some("f0"));
+    assert_eq!(state.selected_finding().map(|f| f.id()), Some("f0"));
 }
 
 #[test]

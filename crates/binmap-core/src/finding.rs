@@ -193,21 +193,73 @@ impl Impact {
 }
 
 /// A single claim about the artifact, and the grounds for it.
+///
+/// **Every field is private, and that is the invariant.** The fields were
+/// public until an audit pointed out what that meant: any crate could build an
+/// ungrounded finding with a struct literal, or clone a valid one and empty
+/// its evidence while raising its confidence to Certain. The constructor's
+/// guarantee was worth nothing while the fields could be written afterwards.
+///
+/// Reading is free — every field has an accessor. Writing is not available at
+/// all: a finding is built by [`Finding::new`] or it is deserialized from a
+/// session artifact, and the deserialized form is re-checked by
+/// [`Finding::revalidate`] before anything trusts it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Finding {
-    pub id: String,
-    pub kind: FindingKind,
+    id: String,
+    kind: FindingKind,
     /// One line, as it appears in the Inspector header.
-    pub title: String,
+    title: String,
     /// The hypothesis, in full. The Inspector's first tab.
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub detail: String,
-    pub location: Location,
-    pub impact: Impact,
-    pub confidence: Confidence,
-    pub provenance: Provenance,
+    detail: String,
+    location: Location,
+    impact: Impact,
+    confidence: Confidence,
+    provenance: Provenance,
     /// Never empty. Enforced by [`Finding::new`].
-    pub evidence: Vec<EvidenceId>,
+    evidence: Vec<EvidenceId>,
+}
+
+impl Finding {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn kind(&self) -> &FindingKind {
+        &self.kind
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+
+    pub fn location(&self) -> &Location {
+        &self.location
+    }
+
+    pub fn impact(&self) -> Impact {
+        self.impact
+    }
+
+    pub fn confidence(&self) -> Confidence {
+        self.confidence
+    }
+
+    pub fn provenance(&self) -> &Provenance {
+        &self.provenance
+    }
+
+    /// The evidence this finding cites. Never empty for a finding that came
+    /// through [`Finding::new`]; re-checked by [`Finding::revalidate`] for one
+    /// that came from a file.
+    pub fn evidence(&self) -> &[EvidenceId] {
+        &self.evidence
+    }
 }
 
 /// The fields of a finding, before it has been checked.

@@ -127,6 +127,13 @@ pub struct SweepState {
     /// The baseline every number is stated against.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub baseline_bytes: Option<u64>,
+    /// Warnings the baseline build emitted.
+    ///
+    /// `NoNewWarnings` is judged against this, never against zero: a project
+    /// that already warns is not thereby forbidden a smaller binary. It was
+    /// judged against zero until the audit found it.
+    #[serde(default)]
+    pub baseline_warnings: usize,
     pub complete: bool,
 }
 
@@ -139,6 +146,7 @@ impl SweepState {
             measured: Vec::new(),
             noise_floor: None,
             baseline_bytes: None,
+            baseline_warnings: 0,
             complete: false,
         }
     }
@@ -305,6 +313,7 @@ impl<'a> Sweep<'a> {
 
         let baseline = BuildConfiguration::default_release();
         let outcome = self.builder.build(target, &baseline)?;
+        state.baseline_warnings = outcome.warnings;
         let artifact = outcome.artifact.ok_or_else(|| {
             Error::Other("default release does not build; there is nothing to compare to".into())
         })?;
@@ -411,10 +420,11 @@ impl<'a> Sweep<'a> {
             })
         });
         let size_bytes = measured_size.as_ref().map(|size| size.total_bytes);
-        // Deliberately not populated yet — the audit found F0.4's per-section
-        // requirement unmet and there is a red test asserting it.
-        let sections: Option<Vec<binmap_core::artifact::Section>> = None;
-        let _ = &measured_size;
+        // `F0.4` asks for total *and per-section* size per configuration. The
+        // sections were read to compute the total and then discarded until the
+        // audit found it; keeping them is what gives the Size Explorer and the
+        // design's section breakdown a source.
+        let sections = measured_size.map(|size| size.sections);
 
         let mut candidate = Candidate::new(name.clone()).citing(evidence.clone());
         if let (Some(baseline), Some(bytes)) = (state.baseline_bytes, size_bytes) {
@@ -422,10 +432,23 @@ impl<'a> Sweep<'a> {
                 candidate.sized(SizeObservation { baseline_bytes: baseline, candidate_bytes: bytes });
         }
 
-        // Gate the configuration. The build gate re-runs the build under the
-        // same arguments, which cargo answers from its own cache — that is the
-        // caching (`F0.8`) doing its job rather than a second full build.
-        let report = Harness::new(self.runner, self.options.gates.clone()).verify(&candidate);
+        // Gate the configuration — under *its own* environment.
+        //
+        // This is the defect the Phase 0 audit found. The gate commands are
+        // the user's ("cargo build --release", "cargo test"); they know
+        // nothing about configurations. Handing the harness a plan with no
+        // environment gated all ninety-six candidates on the same default
+        // build, in the user's own target directory, and still reported
+        // "tests passing" — about a build that was not the one measured.
+        //
+        // The environment is the build system's own, so the gates build
+        // exactly where and how the sweep built. Cargo answers the repeated
+        // build from that directory's cache, which is `F0.8`'s caching doing
+        // its job rather than a second full build.
+        let mut plan = self.options.gates.clone();
+        plan.env.extend(self.builder.build_environment(configuration));
+        plan.baseline_warnings = state.baseline_warnings;
+        let report = Harness::new(self.runner, plan).verify(&candidate);
         for outcome in &report.outcomes {
             evidence.extend(outcome.evidence.iter().cloned());
         }

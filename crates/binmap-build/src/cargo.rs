@@ -61,8 +61,8 @@ impl CargoBuildSystem {
         arguments.extend(configuration.unstable_args());
         arguments.push("--package".into());
         arguments.push(target.package.clone());
-        arguments.push("--target-dir".into());
-        arguments.push(self.target_directory_for(configuration).display().to_string());
+        // The target directory travels in the environment rather than on the
+        // command line, so the gates inherit it with everything else.
         // JSON on stdout for the artifact paths, rendered diagnostics on
         // stderr so the Builds gate can count warnings the way a person does.
         arguments.push("--message-format".into());
@@ -99,6 +99,14 @@ impl CargoBuildSystem {
         if !flags.is_empty() {
             env.insert("RUSTFLAGS".to_string(), flags.join(" "));
         }
+        // Per configuration, and never the user's own. This is in the
+        // environment rather than on the command line precisely so the gates
+        // inherit it: a gate that built in the user's cache would both
+        // disturb it and measure the wrong thing.
+        env.insert(
+            "CARGO_TARGET_DIR".to_string(),
+            self.target_directory_for(configuration).display().to_string(),
+        );
         env
     }
 
@@ -159,6 +167,10 @@ fn count_warnings(stderr: &str) -> usize {
 impl BuildSystem for CargoBuildSystem {
     fn targets(&self, root: &Path) -> Result<Vec<Target>> {
         crate::project::discover(&self.runner, root).map(|(_, targets)| targets)
+    }
+
+    fn build_environment(&self, configuration: &BuildConfiguration) -> BTreeMap<String, String> {
+        self.env_for(configuration)
     }
 
     fn build(
@@ -238,9 +250,22 @@ mod tests {
     #[test]
     fn a_sweep_never_touches_the_users_target_directory() {
         let system = system();
-        let arguments = system.build_arguments(&target(), &BuildConfiguration::default_release());
-        let index = arguments.iter().position(|a| a == "--target-dir").expect("always passed");
-        assert!(arguments[index + 1].starts_with("/tmp/binmap-target"));
+        let env = system.environment_for(&BuildConfiguration::default_release());
+        let directory = env.get("CARGO_TARGET_DIR").expect("always set");
+        assert!(directory.starts_with("/tmp/binmap-target"), "{directory}");
+    }
+
+    #[test]
+    fn the_gates_inherit_the_environment_the_build_used() {
+        // The whole point of putting the target directory in the environment:
+        // a gate command the caller wrote knows nothing about configurations,
+        // and must still build where the sweep built, under the same profile.
+        let system = system();
+        let configuration =
+            BuildConfiguration { opt_level: Some(OptLevel::Size), ..Default::default() };
+        let env = BuildSystem::build_environment(&system, &configuration);
+        assert_eq!(env.get("CARGO_PROFILE_RELEASE_OPT_LEVEL").map(String::as_str), Some("s"));
+        assert!(env.contains_key("CARGO_TARGET_DIR"));
     }
 
     #[test]
