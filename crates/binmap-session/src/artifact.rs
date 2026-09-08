@@ -149,6 +149,10 @@ pub struct ImportOutcome {
     pub evidence: EvidenceStore,
     /// The findings that survived revalidation.
     pub findings: Vec<Finding>,
+    /// The gate reports whose cited evidence the store actually issued.
+    pub gates: Vec<VerificationReport>,
+    /// How many gate reports were refused for citing evidence nobody issued.
+    pub refused_gates: usize,
     /// Evidence refused because its recorded output no longer hashes to its
     /// recorded digest.
     pub tampered_evidence: Vec<EvidenceId>,
@@ -161,7 +165,10 @@ impl ImportOutcome {
     /// The sentence the restored-session notice shows when something was
     /// refused.
     pub fn refusal_notice(&self) -> Option<String> {
-        if self.tampered_evidence.is_empty() && self.ungrounded_findings.is_empty() {
+        if self.tampered_evidence.is_empty()
+            && self.ungrounded_findings.is_empty()
+            && self.refused_gates == 0
+        {
             return None;
         }
         let mut parts = Vec::new();
@@ -176,6 +183,12 @@ impl ImportOutcome {
                 "{} finding(s) were dropped for citing them: {}",
                 self.ungrounded_findings.len(),
                 self.ungrounded_findings.join(", ")
+            ));
+        }
+        if self.refused_gates > 0 {
+            parts.push(format!(
+                "{} gate report(s) cited evidence that was never issued",
+                self.refused_gates
             ));
         }
         Some(parts.join("; "))
@@ -201,16 +214,33 @@ pub fn import(artifact: SessionArtifact) -> Result<ImportOutcome> {
     let mut findings = Vec::new();
     let mut ungrounded = Vec::new();
     for finding in &artifact.findings {
-        match finding.revalidate(&evidence) {
-            Ok(()) => findings.push(finding.clone()),
+        // Revalidation corrects as well as checks — it re-applies the
+        // provenance ceiling an edited file may have raised — so it works on
+        // a copy that is kept only if it survives.
+        let mut candidate = finding.clone();
+        match candidate.revalidate(&evidence) {
+            Ok(()) => findings.push(candidate),
             Err(_) => ungrounded.push(finding.id().to_string()),
         }
     }
+
+    // Gate outcomes are claims about candidates, and a claim citing evidence
+    // nobody issued is what the airlock exists to catch. They were adopted
+    // verbatim.
+    let gates: Vec<VerificationReport> = artifact
+        .gates
+        .iter()
+        .filter(|report| report.cited_evidence().all(|id| evidence.issued(id)))
+        .cloned()
+        .collect();
+    let refused_gates = artifact.gates.len() - gates.len();
 
     Ok(ImportOutcome {
         artifact,
         evidence,
         findings,
+        gates,
+        refused_gates,
         tampered_evidence: tampered,
         ungrounded_findings: ungrounded,
     })

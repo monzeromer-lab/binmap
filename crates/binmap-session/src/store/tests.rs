@@ -200,3 +200,45 @@ fn run_state_is_carried_opaquely_and_read_back_in_its_owners_shape() {
     assert_eq!(restored, state);
     assert!(artifact.run_state::<SomeEngineState>("run-2").is_none());
 }
+
+#[test]
+fn a_gate_report_citing_evidence_nobody_issued_is_refused() {
+    // Gate outcomes were adopted verbatim: a hand-written report could say
+    // "TestsPass, 412 passed" and cite an identifier no tool ever produced.
+    // They go through the same airlock as findings now.
+    use binmap_core::gate::{Gate, GateOutcome, GateResult, VerificationReport};
+
+    let temporary = temp_directory();
+    let directory = temporary.path();
+    let store = SessionStore::new(directory).with_redactor(redactor());
+    let (artifact, _) = session();
+
+    let honest = artifact.evidence[0].id.clone();
+    // An identifier that never came from a store. There is no constructor,
+    // so this is exactly how one arrives in practice: out of a file.
+    let forged: binmap_core::evidence::EvidenceId = serde_json::from_str("\"ev-999999\"").unwrap();
+
+    let artifact = artifact.with_gates(vec![
+        VerificationReport {
+            candidate: "honest".into(),
+            outcomes: vec![
+                GateOutcome::new(Gate::TestsPass, GateResult::Passed, "412 passed").citing(honest),
+            ],
+        },
+        VerificationReport {
+            candidate: "invented".into(),
+            outcomes: vec![
+                GateOutcome::new(Gate::TestsPass, GateResult::Passed, "412 passed").citing(forged),
+            ],
+        },
+    ]);
+
+    store.save(&artifact).unwrap();
+    let restored = store.load("app::app").unwrap().expect("it was saved");
+
+    assert_eq!(restored.gates.len(), 1, "the invented report was adopted");
+    assert_eq!(restored.gates[0].candidate, "honest");
+    assert_eq!(restored.refused_gates, 1);
+    let notice = restored.refusal_notice().expect("the user is told");
+    assert!(notice.contains("never issued"), "{notice}");
+}

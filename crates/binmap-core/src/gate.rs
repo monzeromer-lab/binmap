@@ -273,6 +273,15 @@ impl VerificationReport {
         }
     }
 
+    /// Every evidence identifier this report cites.
+    ///
+    /// Import checks these the way it checks a finding's: a gate outcome is a
+    /// claim about a candidate, and a claim citing evidence nobody issued is
+    /// the thing the airlock exists to catch. They were adopted verbatim.
+    pub fn cited_evidence(&self) -> impl Iterator<Item = &EvidenceId> {
+        self.outcomes.iter().flat_map(|outcome| outcome.evidence.iter())
+    }
+
     pub fn outcome(&self, gate: Gate) -> Option<&GateOutcome> {
         self.outcomes.iter().find(|o| o.gate == gate)
     }

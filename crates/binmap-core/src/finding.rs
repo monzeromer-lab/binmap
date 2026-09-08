@@ -370,8 +370,16 @@ impl Finding {
     }
 
     /// Re-check an imported finding against the store that adopted its
-    /// evidence. Import is not construction, so it needs its own gate.
-    pub fn revalidate(&self, store: &EvidenceStore) -> Result<()> {
+    /// evidence, and re-apply the provenance ceiling.
+    ///
+    /// Import is not construction, so it needs its own gate — and it needs the
+    /// *same* gate. Checking grounding without re-clamping confidence left one
+    /// way in: hand-edit a `binmap.json` so an inferred claim says Certain,
+    /// and it restored saying Certain, because only the constructor clamped.
+    ///
+    /// Takes `&mut self` because clamping is a correction, not an opinion: a
+    /// caller that ignored a returned value would be back where it started.
+    pub fn revalidate(&mut self, store: &EvidenceStore) -> Result<()> {
         if self.evidence.is_empty() {
             return Err(Error::Ungrounded(self.id.clone()));
         }
@@ -383,6 +391,7 @@ impl Finding {
                 });
             }
         }
+        self.confidence = self.confidence.min(self.provenance.ceiling());
         Ok(())
     }
 }
@@ -428,6 +437,30 @@ mod tests {
         let finding = Finding::new(draft, &store).unwrap();
         assert_eq!(finding.confidence, Confidence::Probable);
         assert!(finding.provenance.is_external());
+    }
+
+    #[test]
+    fn revalidation_re_applies_the_ceiling_a_hand_edited_file_ignored() {
+        let (store, id) = store_with_one_record();
+        let draft = FindingDraft::new("f1", FindingKind::Monomorphization, "a claim")
+            .cite(id)
+            .confidence(Confidence::Probable)
+            .provenance(Provenance::InferredExternally { agent: "codex".into() });
+        let mut finding = Finding::new(draft, &store).unwrap();
+
+        // What an edited binmap.json looks like after deserialization: the
+        // constructor never ran, so nothing clamped.
+        let raised =
+            serde_json::to_string(&finding).unwrap().replace("\"probable\"", "\"certain\"");
+        finding = serde_json::from_str(&raised).unwrap();
+        assert_eq!(finding.confidence(), Confidence::Certain, "the file did say Certain");
+
+        finding.revalidate(&store).unwrap();
+        assert_eq!(
+            finding.confidence(),
+            Confidence::Probable,
+            "an external claim cannot be restored above its ceiling"
+        );
     }
 
     #[test]

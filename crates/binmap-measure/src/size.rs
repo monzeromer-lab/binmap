@@ -16,13 +16,25 @@ pub fn measure_size(runner: &ToolRunner, artifact: &Path) -> Result<(ArtifactSiz
     let invocation = ToolInvocation::new("binmap:measure-size", [artifact.display().to_string()]);
     let pending = runner.store().begin(invocation);
 
-    let metadata = std::fs::metadata(artifact).map_err(|source| {
-        // The failed attempt is still a fact about the build, so it is
-        // recorded before the error is returned.
-        Error::io(artifact, source)
-    })?;
+    let metadata = match std::fs::metadata(artifact) {
+        Ok(metadata) => metadata,
+        Err(source) => {
+            // Complete the record rather than dropping it. A dropped
+            // PendingEvidence stays in `incomplete()` for the life of the
+            // session and reads as a tool that hung — which is a different
+            // and more alarming thing than a file that was not there.
+            runner.store().complete(pending, format!("failed to read: {source}"), -1);
+            return Err(Error::io(artifact, source));
+        }
+    };
     let total_bytes = metadata.len();
-    let sections = crate::sections::read(artifact)?;
+    let sections = match crate::sections::read(artifact) {
+        Ok(sections) => sections,
+        Err(error) => {
+            runner.store().complete(pending, format!("failed to read sections: {error}"), -1);
+            return Err(error);
+        }
+    };
 
     let mut report = format!("{}\ntotal {total_bytes}\n", artifact.display());
     for section in &sections {
@@ -78,8 +90,14 @@ mod tests {
     #[test]
     fn measuring_something_that_is_not_there_fails_with_the_path() {
         let store = EvidenceStore::new();
-        let runner = ToolRunner::new(store, ".");
+        let runner = ToolRunner::new(store.clone(), ".");
         let error = measure_size(&runner, Path::new("/nonexistent/artifact")).unwrap_err();
         assert!(error.to_string().contains("/nonexistent/artifact"));
+
+        // And leaves no phantom behind. A dropped PendingEvidence stays in
+        // `incomplete()` for the life of the session and reads as a tool that
+        // hung, which is more alarming than what actually happened.
+        assert!(store.incomplete().is_empty(), "a failed measurement left a phantom record");
+        assert_eq!(store.len(), 1, "the attempt is still on the record");
     }
 }

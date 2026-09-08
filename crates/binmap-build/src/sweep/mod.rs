@@ -263,11 +263,16 @@ impl<'a> Sweep<'a> {
         // 4. The frontier, derived from what was measured.
         state.complete = true;
         for index in state.frontier() {
-            if let Ok(finding) = self.frontier_finding(state, index) {
-                events.emit(EngineEvent::Finding {
+            match self.frontier_finding(state, index) {
+                Ok(finding) => events.emit(EngineEvent::Finding {
                     run: state.run.clone(),
                     finding: Box::new(finding),
-                });
+                }),
+                Err(error) => events.emit(EngineEvent::Progress {
+                    run: state.run.clone(),
+                    completed: state.measured.len(),
+                    message: format!("a frontier point could not be grounded: {error}"),
+                }),
             }
         }
 
@@ -375,11 +380,23 @@ impl<'a> Sweep<'a> {
                                 measured.report.summary().to_lowercase()
                             ),
                         });
-                        if let Ok(finding) = self.configuration_finding(state, &measured) {
-                            events.emit(EngineEvent::Finding {
+                        // A finding that cannot be constructed is a bug in us,
+                        // not a candidate to skip. Swallowing it with
+                        // `if let Ok` hid exactly the failure the grounding
+                        // gate exists to make loud.
+                        match self.configuration_finding(state, &measured) {
+                            Ok(finding) => events.emit(EngineEvent::Finding {
                                 run: state.run.clone(),
                                 finding: Box::new(finding),
-                            });
+                            }),
+                            Err(error) => events.emit(EngineEvent::Progress {
+                                run: state.run.clone(),
+                                completed,
+                                message: format!(
+                                    "{}: measured, but no finding could be grounded: {error}",
+                                    measured.name
+                                ),
+                            }),
                         }
                         results.lock().expect("sweep results poisoned").push(measured);
                     }
