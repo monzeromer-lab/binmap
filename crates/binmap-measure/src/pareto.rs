@@ -112,9 +112,10 @@ pub fn frontier(points: &[Point]) -> Vec<usize> {
     (0..points.len())
         .filter(|&index| {
             points[index].eligible
-                && !points.iter().enumerate().any(|(other, candidate)| {
-                    other != index && candidate.dominates(&points[index])
-                })
+                && !points
+                    .iter()
+                    .enumerate()
+                    .any(|(other, candidate)| other != index && candidate.dominates(&points[index]))
         })
         .collect()
 }
@@ -137,8 +138,7 @@ mod tests {
 
     #[test]
     fn a_point_beaten_on_every_axis_is_off_the_frontier() {
-        let points =
-            vec![point("small-and-fast", 100, 100), point("big-and-slow", 200, 200)];
+        let points = vec![point("small-and-fast", 100, 100), point("big-and-slow", 200, 200)];
         assert_eq!(frontier(&points), vec![0]);
     }
 
@@ -169,10 +169,7 @@ mod tests {
 
     #[test]
     fn a_candidate_that_failed_its_gates_stays_visible_but_off_the_frontier() {
-        let points = vec![
-            point("tiny-but-broken", 1, 1).ineligible(),
-            point("honest", 100, 100),
-        ];
+        let points = vec![point("tiny-but-broken", 1, 1).ineligible(), point("honest", 100, 100)];
         assert_eq!(frontier(&points), vec![1]);
         // It is still in the table — the caller keeps every point it measured.
         assert_eq!(points.len(), 2);
@@ -181,17 +178,17 @@ mod tests {
     #[test]
     fn the_frontier_reads_smallest_first() {
         let points = vec![point("b", 300, 100), point("a", 100, 300), point("c", 200, 200)];
-        let ordered: Vec<&str> =
-            frontier_by_size(&points).into_iter().map(|i| points[i].configuration.as_str()).collect();
+        let ordered: Vec<&str> = frontier_by_size(&points)
+            .into_iter()
+            .map(|i| points[i].configuration.as_str())
+            .collect();
         assert_eq!(ordered, ["a", "c", "b"]);
     }
 
     #[test]
     fn runtime_participates_when_both_points_measured_it() {
-        let points = vec![
-            point("a", 100, 100).with_runtime(100),
-            point("b", 100, 100).with_runtime(200),
-        ];
+        let points =
+            vec![point("a", 100, 100).with_runtime(100), point("b", 100, 100).with_runtime(200)];
         assert_eq!(frontier(&points), vec![0]);
     }
 

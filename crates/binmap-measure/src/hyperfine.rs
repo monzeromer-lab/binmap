@@ -100,13 +100,7 @@ pub fn measure(
     if !output.succeeded() {
         return Err(Error::ToolUnavailable {
             tool: "hyperfine".into(),
-            reason: output
-                .stderr
-                .lines()
-                .next()
-                .unwrap_or("it exited non-zero")
-                .trim()
-                .to_string(),
+            reason: output.stderr.lines().next().unwrap_or("it exited non-zero").trim().to_string(),
         });
     }
 

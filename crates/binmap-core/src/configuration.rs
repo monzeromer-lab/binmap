@@ -84,7 +84,10 @@ impl BuildConfiguration {
     pub fn cargo_profile_env(&self) -> BTreeMap<String, String> {
         let mut env = BTreeMap::new();
         let mut set = |setting: &str, value: String| {
-            env.insert(format!("CARGO_PROFILE_RELEASE_{}", setting.replace('-', "_").to_uppercase()), value);
+            env.insert(
+                format!("CARGO_PROFILE_RELEASE_{}", setting.replace('-', "_").to_uppercase()),
+                value,
+            );
         };
         if let Some(v) = self.opt_level {
             set("opt-level", v.to_string());
@@ -380,7 +383,10 @@ mod tests {
         assert!(configuration.unstable_args(None).is_empty());
 
         let args = configuration.unstable_args(Some("x86_64-unknown-linux-gnu"));
-        assert!(args.contains(&"-Zbuild-std-features=panic_immediate_abort".to_string()), "{args:?}");
+        assert!(
+            args.contains(&"-Zbuild-std-features=panic_immediate_abort".to_string()),
+            "{args:?}"
+        );
         assert!(args.contains(&"--target=x86_64-unknown-linux-gnu".to_string()), "{args:?}");
         // The feature must not appear as a crate name.
         assert!(

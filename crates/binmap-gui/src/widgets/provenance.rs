@@ -70,9 +70,7 @@ impl RenderOnce for ProvenanceBadge {
                 .text_color(foreground)
                 .text_size(type_scale::FS_11)
                 .child(self.provenance.glyph().to_string())
-                .when(self.verbose, |d| {
-                    d.child(self.provenance.label().to_uppercase())
-                }),
+                .when(self.verbose, |d| d.child(self.provenance.label().to_uppercase())),
         );
 
         // The confidence half. Always shown: a provenance without a

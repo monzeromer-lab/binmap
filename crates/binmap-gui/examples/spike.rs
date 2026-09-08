@@ -15,10 +15,10 @@
 //!
 //!     cargo run -p binmap-gui --example spike
 
+use gpui_kit::base::dock::{DockArea, DockLayout, DockPlacement, PanelEvent};
 use gpui_kit::component::dock::Panel;
 use gpui_kit::component::table::{Column, ColumnSort, DataTable, TableDelegate, TableState};
 use gpui_kit::component::{ActiveTheme, Root, TitleBar};
-use gpui_kit::base::dock::{DockArea, DockLayout, DockPlacement, PanelEvent};
 use gpui_kit::*;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -451,19 +451,12 @@ impl Render for CanvasPanel {
             .size_full()
             .flex()
             .flex_col()
-            .child(
-                div()
-                    .p_2()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(match hovered {
-                        Some(index) => format!(
-                            "{QUADS} quads · last paint {:?} · hovering #{index}",
-                            self.last_paint
-                        ),
-                        None => format!("{QUADS} quads · last paint {:?}", self.last_paint),
-                    }),
-            )
+            .child(div().p_2().text_xs().text_color(muted).child(match hovered {
+                Some(index) => {
+                    format!("{QUADS} quads · last paint {:?} · hovering #{index}", self.last_paint)
+                }
+                None => format!("{QUADS} quads · last paint {:?}", self.last_paint),
+            }))
             .child(
                 div()
                     .id("spike-canvas")
@@ -496,8 +489,7 @@ impl Render for CanvasPanel {
                             // prepaint: lay the grid out once per frame, at
                             // whatever bounds the flex box settled on.
                             move |bounds: Bounds<Pixels>, _: &mut Window, _: &mut App| {
-                                let mut tally =
-                                    prepaint_tally.lock().expect("tally poisoned");
+                                let mut tally = prepaint_tally.lock().expect("tally poisoned");
                                 tally.prepaints += 1;
                                 tally.canvas_bounds =
                                     (bounds.size.width.into(), bounds.size.height.into());
@@ -614,12 +606,11 @@ impl Render for StreamPanel {
             .gap_2()
             .text_sm()
             .child(self.latest.clone())
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!("{} events in {:?}", self.received, self.started.elapsed())),
-            )
+            .child(div().text_xs().text_color(cx.theme().muted_foreground).child(format!(
+                "{} events in {:?}",
+                self.received,
+                self.started.elapsed()
+            )))
     }
 }
 
@@ -654,14 +645,16 @@ impl Render for Spike {
             .flex_col()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(canvas(
-                |_, _, _| (),
-                move |_, _, _, _| {
-                    probe.lock().expect("tally poisoned").root_paints += 1;
-                },
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |_, _, _, _| {
+                        probe.lock().expect("tally poisoned").root_paints += 1;
+                    },
+                )
+                .w(px(1.))
+                .h(px(1.)),
             )
-            .w(px(1.))
-            .h(px(1.)))
             .child(TitleBar::new().child(div().text_sm().child("Binmap — GPUI spike")))
             .child(
                 div()
@@ -713,11 +706,7 @@ fn main() {
                 });
 
                 dock.update(cx, |dock, cx| {
-                    dock.set_center(
-                        DockLayout::tabs().panel(table.clone()),
-                        window,
-                        cx,
-                    );
+                    dock.set_center(DockLayout::tabs().panel(table.clone()), window, cx);
                     // The streaming view goes in a bottom dock, which also
                     // exercises DockPlacement rather than only the centre.
                     dock.set_dock(

@@ -16,5 +16,5 @@ pub mod sweep;
 pub use cargo::CargoBuildSystem;
 pub use engine::BinmapEngine;
 pub use environment::probe_all;
-pub use project::{discover, ProjectKind};
+pub use project::{ProjectKind, discover};
 pub use sweep::{Sweep, SweepOptions, SweepState};

@@ -72,8 +72,7 @@ pub fn discover(runner: &ToolRunner, root: &Path) -> Result<(ProjectKind, Vec<Ta
         }
     };
 
-    let members: Vec<&Package> =
-        metadata.workspace_packages().into_iter().collect();
+    let members: Vec<&Package> = metadata.workspace_packages().into_iter().collect();
 
     let mut report = String::new();
     let mut targets = Vec::new();

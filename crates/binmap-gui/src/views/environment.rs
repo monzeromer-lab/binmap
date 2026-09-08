@@ -33,8 +33,7 @@ impl EnvironmentPanel {
             })
             .collect();
 
-        let warnings =
-            state.probes().iter().filter(|p| p.status == ProbeStatus::Unusable).count();
+        let warnings = state.probes().iter().filter(|p| p.status == ProbeStatus::Unusable).count();
         let missing = state.probes().iter().filter(|p| p.status == ProbeStatus::Missing).count();
 
         Self { groups, warnings, missing, theme }
@@ -75,14 +74,20 @@ impl RenderOnce for EnvironmentPanel {
                             .text_color(c.text_primary)
                             .child("Environment"),
                     )
-                    .child(div().flex_1().text_size(type_scale::FS_12).text_color(c.text_muted).child(
-                        "Checked when the project opens. Every check maps to a feature that \
+                    .child(
+                        div().flex_1().text_size(type_scale::FS_12).text_color(c.text_muted).child(
+                            "Checked when the project opens. Every check maps to a feature that \
                          would otherwise fail later, at a worse moment.",
-                    ))
+                        ),
+                    )
                     .when(self.warnings > 0, |d| {
                         d.child(
                             Badge::new(
-                                format!("{} warning{}", self.warnings, if self.warnings == 1 { "" } else { "s" }),
+                                format!(
+                                    "{} warning{}",
+                                    self.warnings,
+                                    if self.warnings == 1 { "" } else { "s" }
+                                ),
                                 Tone::Warn,
                                 theme,
                             )
@@ -97,8 +102,8 @@ impl RenderOnce for EnvironmentPanel {
                     }),
             )
             .children(self.groups.into_iter().map(move |(name, probes)| {
-                Section::titled(name, theme).flush().child(
-                    div().flex().flex_col().children(probes.into_iter().map(move |probe| {
+                Section::titled(name, theme).flush().child(div().flex().flex_col().children(
+                    probes.into_iter().map(move |probe| {
                         div()
                             .flex()
                             .flex_row()
@@ -159,8 +164,8 @@ impl RenderOnce for EnvironmentPanel {
                                         .child(action),
                                 )
                             })
-                    })),
-                )
+                    }),
+                ))
             }))
     }
 }

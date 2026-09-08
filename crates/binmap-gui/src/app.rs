@@ -72,9 +72,7 @@ impl Binmap {
         // which is the repaint request.
         cx.spawn(async move |view, cx| {
             loop {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(50))
-                    .await;
+                cx.background_executor().timer(std::time::Duration::from_millis(50)).await;
                 let updated = view.update(cx, |this: &mut Binmap, cx| {
                     let mut applied = false;
                     while let Ok(event) = this.events.try_recv() {
@@ -187,17 +185,12 @@ impl Render for Binmap {
             .find(|probe| probe.name == "git")
             .map(|probe| probe.detail.clone());
         let dirty = commit.as_deref().is_some_and(|d| d.contains("uncommitted"));
-        let short = commit
-            .as_deref()
-            .and_then(|d| d.split(',').next())
-            .unwrap_or_default()
-            .to_string();
+        let short =
+            commit.as_deref().and_then(|d| d.split(',').next()).unwrap_or_default().to_string();
 
         let selected = self.state.selected_finding().cloned();
-        let evidence = selected
-            .as_ref()
-            .map(|finding| self.engine.evidence(finding.id()))
-            .unwrap_or_default();
+        let evidence =
+            selected.as_ref().map(|finding| self.engine.evidence(finding.id())).unwrap_or_default();
 
         div()
             .flex()
@@ -216,25 +209,18 @@ impl Render for Binmap {
                     .flex_row()
                     .flex_1()
                     .min_h_0()
-                    .child(NavRail::new(
-                        self.state.nav_entries(),
-                        self.state.view(),
-                        theme,
-                    ))
+                    .child(NavRail::new(self.state.nav_entries(), self.state.view(), theme))
                     .child(TargetList::of(&self.state, theme))
                     .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_w_0()
-                            .bg(c.surface_app)
-                            .child(match self.state.view() {
+                        div().flex().flex_1().min_w_0().bg(c.surface_app).child(
+                            match self.state.view() {
                                 Some(View::Environment) => {
                                     EnvironmentPanel::of(&self.state, theme).into_any_element()
                                 }
                                 _ => TargetView::of(&self.state, self.root.clone(), theme)
                                     .into_any_element(),
-                            }),
+                            },
+                        ),
                     )
                     .child(Inspector::new(
                         selected,
@@ -279,9 +265,10 @@ pub fn run(engine: Arc<dyn Engine>, project: String, root: Option<String>) {
             };
 
             cx.open_window(options, |window, cx| {
-                let app: Entity<Binmap> =
-                    cx.new(|cx| Binmap::new(engine, project, root, cx));
-                cx.new(|cx| gpui_kit::component::Root::new(gpui_kit::AnyView::from(app), window, cx))
+                let app: Entity<Binmap> = cx.new(|cx| Binmap::new(engine, project, root, cx));
+                cx.new(|cx| {
+                    gpui_kit::component::Root::new(gpui_kit::AnyView::from(app), window, cx)
+                })
             })
             .expect("Binmap could not open a window");
         })

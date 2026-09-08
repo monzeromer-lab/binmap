@@ -105,10 +105,14 @@ pub enum GateResult {
     Failed,
     /// The gate did not apply. The reason is stated, so an absent gate is
     /// never mistaken for a passing one.
-    Skipped { reason: String },
+    Skipped {
+        reason: String,
+    },
     /// The gate ran and could not tell — a difference inside the noise floor.
     /// Never rendered as a pass.
-    Inconclusive { reason: String },
+    Inconclusive {
+        reason: String,
+    },
 }
 
 impl GateResult {

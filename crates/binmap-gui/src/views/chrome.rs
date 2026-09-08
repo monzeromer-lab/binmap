@@ -171,9 +171,7 @@ impl RenderOnce for NavRail {
                     .flex_none()
                     .w_full()
                     .h(px(52.))
-                    .when(active, |d| {
-                        d.bg(c.surface_selected).border_l_2().border_color(c.accent)
-                    })
+                    .when(active, |d| d.bg(c.surface_selected).border_l_2().border_color(c.accent))
                     .child(
                         div()
                             .text_size(type_scale::FS_14)

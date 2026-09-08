@@ -16,8 +16,8 @@ use binmap_core::config::ProjectConfig;
 use binmap_core::event::{Cancellation, EngineEvent, EventSink, RunId};
 use binmap_core::evidence::ToolInvocation;
 use binmap_core::facade::{Engine, ProbeStatus};
-use binmap_session::artifact::{SessionArtifact, TargetMetadata};
 use binmap_session::SessionStore;
+use binmap_session::artifact::{SessionArtifact, TargetMetadata};
 use binmap_verify::GatePlan;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
@@ -147,10 +147,13 @@ impl EventSink for Printer {
     fn emit(&self, event: EngineEvent) {
         match event {
             EngineEvent::Started { description, total, .. } => {
-                println!("started: {description}{}", match total {
-                    Some(total) => format!(" ({total} configurations)"),
-                    None => String::new(),
-                });
+                println!(
+                    "started: {description}{}",
+                    match total {
+                        Some(total) => format!(" ({total} configurations)"),
+                        None => String::new(),
+                    }
+                );
             }
             EngineEvent::Progress { completed, message, .. } => {
                 println!("  [{completed:>4}] {message}");
@@ -180,17 +183,13 @@ fn run_sweep(engine: &BinmapEngine, options: &Options) -> Result<(SweepState, St
             .find(|target| &target.id == id)
             .cloned()
             .ok_or_else(|| format!("no target `{id}`"))?,
-        None => targets
-            .first()
-            .cloned()
-            .ok_or("this project has no targets Binmap can measure")?,
+        None => targets.first().cloned().ok_or("this project has no targets Binmap can measure")?,
     };
 
     let run = RunId("eval-0001".into());
     engine.sweep_blocking(run.clone(), &target, &Printer, &Cancellation::new());
-    let state = engine
-        .run_state(&run)
-        .ok_or("the sweep left no state, which should be impossible")?;
+    let state =
+        engine.run_state(&run).ok_or("the sweep left no state, which should be impossible")?;
     Ok((state, target.id.clone()))
 }
 

@@ -3,7 +3,12 @@ use binmap_core::event::RecordedEvents;
 use binmap_core::evidence::ToolInvocation;
 
 fn workspace_root() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap().to_path_buf()
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }
 
 /// An engine opened on our own workspace, with a matrix small enough to be a
@@ -123,9 +128,67 @@ fn a_run_adopted_from_a_previous_session_can_be_resumed() {
     assert_eq!(engine.run_states().len(), 1);
     // With an empty matrix there is nothing to build, so this resolves the
     // target and returns rather than erroring.
+    assert!(engine.start(Request::ResumeSweep { run }, Arc::new(RecordedEvents::new())).is_ok());
+}
+
+#[test]
+fn a_finished_sweep_is_written_to_disk_and_can_be_restored() {
+    // F0.7 and F0.8's resume were both unreachable until this: SessionStore
+    // had no caller outside its own tests, so nothing was ever persisted
+    // however complete the types looked.
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let mut config = ProjectConfig::new(workspace_root());
+    config.target_directory = directory.path().to_path_buf();
+    config.matrix = binmap_core::config::SweepMatrix {
+        opt_level: vec![binmap_core::config::OptLevel::Three],
+        lto: Vec::new(),
+        codegen_units: Vec::new(),
+        panic: Vec::new(),
+        strip: Vec::new(),
+        debug: Vec::new(),
+        overflow_checks: Vec::new(),
+        build_std: Vec::new(),
+        target_cpu: Vec::new(),
+    };
+
+    let gates = GatePlan::new(ToolInvocation::new("sh", ["-c", "true"]));
+    let engine = BinmapEngine::open(config.clone(), gates.clone()).expect("opens");
+    let target = engine.target_by_id("binmap::binmap").expect("our own binary");
+
+    // An adopted run stands in for a completed one, so the test does not have
+    // to build the workspace ninety-six ways to check persistence.
+    let run = RunId("run-0001".into());
+    engine.adopt_run(SweepState::new(run.clone(), target.id.clone(), Vec::new()));
+    engine.persist_for_test(&target).expect("the session is written");
+
+    // A fresh engine on the same project finds it.
+    let reopened = BinmapEngine::open(config, gates).expect("opens again");
+    assert_eq!(reopened.run_states().len(), 0, "nothing is restored until asked");
+
+    let adopted = reopened.restore(&target.id).expect("the session reads back");
+    assert_eq!(adopted, 1, "the sweep did not survive the process");
+    assert!(reopened.run_state(&run).is_some());
+}
+
+#[test]
+fn an_exported_session_names_what_it_redacted() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let mut config = ProjectConfig::new(workspace_root());
+    config.target_directory = directory.path().to_path_buf();
+
+    let gates = GatePlan::new(ToolInvocation::new("sh", ["-c", "true"]));
+    let engine = BinmapEngine::open(config, gates).expect("opens");
+    let target = engine.target_by_id("binmap::binmap").expect("our own binary");
+
+    // Opening the project already ran cargo metadata, so there is evidence
+    // carrying this machine's absolute paths.
+    assert!(!engine.evidence_store().is_empty());
+
+    let path = directory.path().join("shared.binmap.json");
+    let described = engine.export(&target, &path).expect("the export is written");
+    assert!(path.exists());
     assert!(
-        engine
-            .start(Request::ResumeSweep { run }, Arc::new(RecordedEvents::new()))
-            .is_ok()
+        described.starts_with("Redacted: ") || described == "Nothing needed redacting.",
+        "{described}"
     );
 }

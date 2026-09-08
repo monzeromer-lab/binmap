@@ -175,6 +175,5 @@ pub trait Engine: Send + Sync {
 
     /// Turn a frontier point into a `Cargo.toml` edit, without writing
     /// anything. Writing it is a separate, tier-gated [`Request::Apply`].
-    fn propose_configuration(&self, configuration: &BuildConfiguration)
-    -> crate::Result<Proposal>;
+    fn propose_configuration(&self, configuration: &BuildConfiguration) -> crate::Result<Proposal>;
 }

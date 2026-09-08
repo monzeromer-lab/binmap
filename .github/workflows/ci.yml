@@ -1,0 +1,70 @@
+# The CI gate §8 asks for.
+#
+# "The full suite runs under the null backend, and that is the CI gate that
+# keeps the deterministic core deterministic." No model is called anywhere in
+# this workflow, and the suite must pass without one.
+#
+# It also runs the things that were claimed to be enforced and were not until
+# an audit checked: cargo-deny's dependency bans, which are what actually hold
+# §2.4's "the interface may not compute" in place.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # No provider is configured, so nothing can reach a model even by accident.
+  BINMAP_MODEL_BACKEND: null
+
+jobs:
+  suite:
+    name: Test suite, null backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+  boundary:
+    name: Architectural boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          # `bans` is the one that matters: binmap-gui may not depend on
+          # anything that computes. The rest are hygiene.
+          command: check bans licenses advisories
+
+  acceptance:
+    name: Phase 0 acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Measured through the headless harness, never through the interface
+      # (A1.3). An engine feature that cannot be exercised without a window is
+      # a layering violation, and this is where that gets caught.
+      - name: Environment
+        run: cargo run --release -p binmap-eval -- doctor corpus/tiny
+        continue-on-error: true
+
+      - name: Acceptance criterion
+        run: cargo run --release -p binmap-eval -- acceptance corpus/tiny --jobs 4

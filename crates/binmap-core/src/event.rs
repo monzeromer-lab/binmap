@@ -68,7 +68,9 @@ impl EngineEvent {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            EngineEvent::Finished { .. } | EngineEvent::Cancelled { .. } | EngineEvent::Failed { .. }
+            EngineEvent::Finished { .. }
+                | EngineEvent::Cancelled { .. }
+                | EngineEvent::Failed { .. }
         )
     }
 }
@@ -165,7 +167,11 @@ mod tests {
             description: "sweep".into(),
             total: Some(2),
         });
-        sink.emit(EngineEvent::Progress { run: run.clone(), completed: 1, message: "built".into() });
+        sink.emit(EngineEvent::Progress {
+            run: run.clone(),
+            completed: 1,
+            message: "built".into(),
+        });
         sink.emit(EngineEvent::Cancelled { run: run.clone(), completed: 1 });
 
         let terminal = sink.events().iter().filter(|e| e.is_terminal()).count();

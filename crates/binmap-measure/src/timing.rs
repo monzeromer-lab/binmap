@@ -225,11 +225,8 @@ fn mann_whitney(first: &[f64], second: &[f64]) -> Significance {
         return Significance { p_value: 1.0 };
     }
 
-    let mut combined: Vec<(f64, usize)> = first
-        .iter()
-        .map(|&v| (v, 0usize))
-        .chain(second.iter().map(|&v| (v, 1usize)))
-        .collect();
+    let mut combined: Vec<(f64, usize)> =
+        first.iter().map(|&v| (v, 0usize)).chain(second.iter().map(|&v| (v, 1usize))).collect();
     combined.sort_by(|a, b| a.0.partial_cmp(&b.0).expect("durations are never NaN"));
 
     // Average ranks over ties, and accumulate the tie correction as we go.
@@ -330,7 +327,9 @@ mod tests {
         let candidate = millis(&[200, 201, 202, 203, 204, 205, 206]);
         let verdict = compare(&baseline, &candidate, &floor(0.03));
         match verdict {
-            BenchmarkVerdict::Regressed { detail } => assert!(detail.contains("slower"), "{detail}"),
+            BenchmarkVerdict::Regressed { detail } => {
+                assert!(detail.contains("slower"), "{detail}")
+            }
             other => panic!("expected a regression: {other:?}"),
         }
     }

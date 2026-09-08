@@ -54,8 +54,10 @@ impl Inspector {
         all: &[Finding],
         theme: Theme,
     ) -> Self {
-        let measured =
-            all.iter().filter(|f| matches!(f.provenance(), binmap_core::Provenance::Measured)).count();
+        let measured = all
+            .iter()
+            .filter(|f| matches!(f.provenance(), binmap_core::Provenance::Measured))
+            .count();
         let inferred = all
             .iter()
             .filter(|f| {
@@ -121,25 +123,17 @@ impl RenderOnce for Inspector {
                         .gap(space::S8)
                         .p(space::S12)
                         .child(
-                            div()
-                                .text_size(type_scale::FS_12)
-                                .text_color(c.text_secondary)
-                                .child(
-                                    "No findings in this session yet. The Inspector stays on \
+                            div().text_size(type_scale::FS_12).text_color(c.text_secondary).child(
+                                "No findings in this session yet. The Inspector stays on \
                                      screen because a claim and its evidence belong on the same \
                                      screen — there is no view where one is available and the \
                                      other is not.",
-                                ),
+                            ),
                         )
-                        .child(
-                            div()
-                                .text_size(type_scale::FS_11)
-                                .text_color(c.text_muted)
-                                .child(
-                                    "A finding is never constructed without at least one \
+                        .child(div().text_size(type_scale::FS_11).text_color(c.text_muted).child(
+                            "A finding is never constructed without at least one \
                                      evidence item.",
-                                ),
-                        ),
+                        )),
                 );
         };
 
@@ -245,11 +239,8 @@ fn hypothesis(finding: &Finding, theme: Theme) -> impl IntoElement {
         )
         .when_some(impact.size_bytes, |d, bytes| {
             // Inside the noise floor draws flat — neither green nor red.
-            let colour = if impact.within_noise_floor {
-                c.delta_flat
-            } else {
-                c.delta(Some(bytes < 0))
-            };
+            let colour =
+                if impact.within_noise_floor { c.delta_flat } else { c.delta(Some(bytes < 0)) };
             d.child(
                 div()
                     .flex()
@@ -257,10 +248,7 @@ fn hypothesis(finding: &Finding, theme: Theme) -> impl IntoElement {
                     .gap(space::S8)
                     .items_center()
                     .child(
-                        div()
-                            .text_size(type_scale::FS_11)
-                            .text_color(c.text_muted)
-                            .child("impact"),
+                        div().text_size(type_scale::FS_11).text_color(c.text_muted).child("impact"),
                     )
                     .child(
                         div()
@@ -309,7 +297,10 @@ fn evidence_list(evidence: &[Evidence], theme: Theme) -> impl IntoElement {
                     .font_family("JetBrains Mono")
                     .text_size(type_scale::FS_11)
                     .text_color(c.text_disabled)
-                    .child(format!("output digest {}", &record.digest[..12.min(record.digest.len())])),
+                    .child(format!(
+                        "output digest {}",
+                        &record.digest[..12.min(record.digest.len())]
+                    )),
             )
     }))
 }

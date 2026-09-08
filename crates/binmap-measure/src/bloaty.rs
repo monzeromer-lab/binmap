@@ -27,7 +27,10 @@ pub fn is_available(runner: &ToolRunner) -> bool {
 ///
 /// `-d sections --csv` gives a stable machine-readable shape; the pretty table
 /// is for people.
-pub fn sections(runner: &ToolRunner, artifact: &Path) -> Result<(BTreeMap<String, u64>, EvidenceId)> {
+pub fn sections(
+    runner: &ToolRunner,
+    artifact: &Path,
+) -> Result<(BTreeMap<String, u64>, EvidenceId)> {
     let output = runner.run(ToolInvocation::new(
         "bloaty",
         ["-d", "sections", "-n", "0", "--csv", &artifact.display().to_string()],
@@ -55,10 +58,7 @@ fn parse_csv(text: &str) -> BTreeMap<String, u64> {
 ///
 /// Returns `None` when bloaty is not installed — an absent second opinion is
 /// not a disagreement.
-pub fn disagreement(
-    runner: &ToolRunner,
-    size: &ArtifactSize,
-) -> Result<Option<(f64, EvidenceId)>> {
+pub fn disagreement(runner: &ToolRunner, size: &ArtifactSize) -> Result<Option<(f64, EvidenceId)>> {
     if !is_available(runner) {
         return Ok(None);
     }

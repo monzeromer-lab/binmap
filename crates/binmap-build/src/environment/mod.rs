@@ -73,11 +73,9 @@ pub fn probe_all(runner: &ToolRunner) -> Vec<Probe> {
 /// A tool that answers `--version`.
 fn version(runner: &ToolRunner, group: &str, name: &str, tool: &str, remedy: &str) -> Probe {
     match runner.run(ToolInvocation::new(tool, ["--version"])) {
-        Ok(output) if output.succeeded() => Probe::present(
-            group,
-            name,
-            output.stdout.lines().next().unwrap_or("present").trim(),
-        ),
+        Ok(output) if output.succeeded() => {
+            Probe::present(group, name, output.stdout.lines().next().unwrap_or("present").trim())
+        }
         Ok(output) => Probe::needs(
             group,
             name,
@@ -161,11 +159,9 @@ fn nightly(runner: &ToolRunner) -> Probe {
 
 fn replay_recorder(runner: &ToolRunner) -> Probe {
     match runner.run(ToolInvocation::new("rr", ["--version"])) {
-        Ok(output) if output.succeeded() => Probe::present(
-            REPLAY,
-            "rr",
-            output.stdout.lines().next().unwrap_or("present").trim(),
-        ),
+        Ok(output) if output.succeeded() => {
+            Probe::present(REPLAY, "rr", output.stdout.lines().next().unwrap_or("present").trim())
+        }
         _ => Probe::needs(
             REPLAY,
             "rr",
@@ -305,10 +301,20 @@ fn core_dumps(runner: &ToolRunner) -> Probe {
             name,
             format!(
                 "ulimit -c {limit} · routed through a handler ({}), so retrieve with coredumpctl",
-                pattern.split('/').next_back().unwrap_or("handler").split(' ').next().unwrap_or("handler")
+                pattern
+                    .split('/')
+                    .next_back()
+                    .unwrap_or("handler")
+                    .split(' ')
+                    .next()
+                    .unwrap_or("handler")
             ),
         ),
-        limit => Probe::present(PROJECT, name, format!("ulimit -c {limit} · written to the working directory")),
+        limit => Probe::present(
+            PROJECT,
+            name,
+            format!("ulimit -c {limit} · written to the working directory"),
+        ),
     }
 }
 
@@ -347,7 +353,8 @@ mod tests {
     #[test]
     fn a_missing_measurement_tool_says_what_is_actually_lost() {
         // "not installed" alone does not tell a user whether to care.
-        for probe in probes().into_iter().filter(|p| p.group == MEASUREMENT && p.needs_attention()) {
+        for probe in probes().into_iter().filter(|p| p.group == MEASUREMENT && p.needs_attention())
+        {
             assert!(
                 probe.detail.len() > 20 && !probe.detail.starts_with("not installed"),
                 "{}: `{}` does not say what it costs",

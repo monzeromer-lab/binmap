@@ -19,6 +19,6 @@ pub mod theme;
 pub mod views;
 pub mod widgets;
 
-pub use state::{AppState, NavEntry, RunProgress, View};
 pub use app::Binmap;
+pub use state::{AppState, NavEntry, RunProgress, View};
 pub use theme::{Appearance, Colours, Theme};

@@ -20,6 +20,6 @@ pub mod artifact;
 pub mod redact;
 pub mod store;
 
-pub use artifact::{ImportOutcome, RunRecord, SessionArtifact, TargetMetadata, SCHEMA_VERSION};
+pub use artifact::{ImportOutcome, RunRecord, SCHEMA_VERSION, SessionArtifact, TargetMetadata};
 pub use redact::{Redaction, RedactionReport};
 pub use store::SessionStore;

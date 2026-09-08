@@ -61,8 +61,9 @@ impl SessionStore {
     /// (`U13`).
     pub fn read(&self, path: &Path) -> Result<ImportOutcome> {
         let text = std::fs::read_to_string(path).map_err(|source| Error::io(path, source))?;
-        let artifact: SessionArtifact = serde_json::from_str(&text)
-            .map_err(|source| Error::serialization(format!("reading {}", path.display()), source))?;
+        let artifact: SessionArtifact = serde_json::from_str(&text).map_err(|source| {
+            Error::serialization(format!("reading {}", path.display()), source)
+        })?;
         crate::artifact::import(artifact)
     }
 
@@ -72,11 +73,7 @@ impl SessionStore {
     /// The redaction is written into the artifact itself, so the person who
     /// receives it is told the evidence has been altered rather than left to
     /// assume it is verbatim.
-    pub fn export(
-        &self,
-        artifact: &SessionArtifact,
-        path: &Path,
-    ) -> Result<RedactionReport> {
+    pub fn export(&self, artifact: &SessionArtifact, path: &Path) -> Result<RedactionReport> {
         let mut report = RedactionReport::default();
         let mut copy = artifact.clone();
 

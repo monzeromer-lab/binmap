@@ -23,14 +23,8 @@ fn dark_is_the_default_because_u11_says_so() {
 fn the_two_themes_are_genuinely_opposite_not_one_tinted() {
     let dark = Colours::dark();
     let light = Colours::light();
-    assert!(
-        luminance(dark.surface_app) < 0.05,
-        "the dark app surface should be dark"
-    );
-    assert!(
-        luminance(light.surface_app) > 0.8,
-        "the light app surface should be light"
-    );
+    assert!(luminance(dark.surface_app) < 0.05, "the dark app surface should be dark");
+    assert!(luminance(light.surface_app) > 0.8, "the light app surface should be light");
     // And text follows the surface rather than staying put.
     assert!(luminance(dark.text_primary) > luminance(dark.surface_app));
     assert!(luminance(light.text_primary) < luminance(light.surface_app));
@@ -56,8 +50,7 @@ fn the_three_provenances_are_told_apart_by_hue_not_only_by_glyph() {
     for (name, colours) in [("dark", Colours::dark()), ("light", Colours::light())] {
         let measured = colours.provenance(&Provenance::Measured).0;
         let derived = colours.provenance(&Provenance::Derived { rule: "r".into() }).0;
-        let inferred =
-            colours.provenance(&Provenance::InferredNatively { model: "m".into() }).0;
+        let inferred = colours.provenance(&Provenance::InferredNatively { model: "m".into() }).0;
 
         assert_ne!(measured, derived, "{name}: measured and derived share a colour");
         assert_ne!(derived, inferred, "{name}: derived and inferred share a colour");
@@ -72,8 +65,7 @@ fn an_external_claim_is_drawn_like_an_internal_one_and_distinguished_by_its_badg
     // would imply a different kind of claim rather than a weaker guarantee.
     let colours = Colours::dark();
     let native = colours.provenance(&Provenance::InferredNatively { model: "m".into() }).0;
-    let external =
-        colours.provenance(&Provenance::InferredExternally { agent: "a".into() }).0;
+    let external = colours.provenance(&Provenance::InferredExternally { agent: "a".into() }).0;
     assert_eq!(native, external);
 }
 

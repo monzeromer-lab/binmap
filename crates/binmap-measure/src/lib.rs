@@ -14,7 +14,7 @@ pub mod sections;
 pub mod size;
 pub mod timing;
 
+pub use hyperfine::Timing;
 pub use pareto::{Point, frontier};
 pub use size::measure_size;
 pub use timing::{NoiseFloor, Samples, compare};
-pub use hyperfine::Timing;

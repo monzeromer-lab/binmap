@@ -158,8 +158,8 @@ fn a_sweep_measures_every_configuration_and_states_them_against_the_baseline() {
     // Default release is what every number is stated against, so it is the
     // one configuration whose size the fixture pins explicitly.
     let baseline = BuildConfiguration::default_release().name();
-    let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000)
-        .sized(&baseline, 4000);
+    let builder =
+        FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000).sized(&baseline, 4000);
     let sweep = Sweep {
         builder: &builder,
         runner: &fixture.runner,
@@ -225,8 +225,8 @@ fn a_configuration_that_does_not_build_stays_visible_as_a_rejected_candidate() {
         ..Default::default()
     }
     .name();
-    let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000)
-        .breaking(&broken_name);
+    let builder =
+        FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1000).breaking(&broken_name);
     let sweep = Sweep {
         builder: &builder,
         runner: &fixture.runner,
@@ -241,8 +241,7 @@ fn a_configuration_that_does_not_build_stays_visible_as_a_rejected_candidate() {
     let events = RecordedEvents::new();
     sweep.run(&target(), &mut state, &events, &Cancellation::new()).unwrap();
 
-    let broken =
-        state.measured.iter().find(|m| m.name == broken_name).expect("still in the table");
+    let broken = state.measured.iter().find(|m| m.name == broken_name).expect("still in the table");
     assert!(!broken.built);
     // It has no size, so it cannot reach the frontier — but it was not dropped.
     assert_eq!(broken.size_bytes, None);
@@ -314,8 +313,7 @@ fn a_parallel_sweep_records_no_build_times_rather_than_wrong_ones() {
     let options = SweepOptions::new(passing_gates()).with_parallelism(4);
     assert!(!options.build_time_is_measurable());
 
-    let sweep =
-        Sweep { builder: &builder, runner: &fixture.runner, benchmark: None, options };
+    let sweep = Sweep { builder: &builder, runner: &fixture.runner, benchmark: None, options };
     let matrix = small_matrix();
     let mut state = state_for(&matrix);
     sweep.run(&target(), &mut state, &RecordedEvents::new(), &Cancellation::new()).unwrap();
@@ -369,19 +367,13 @@ fn the_frontier_finding_is_derived_and_says_which_rule_derived_it() {
     let events = RecordedEvents::new();
     sweep.run(&target(), &mut state, &events, &Cancellation::new()).unwrap();
 
-    let frontier: Vec<_> = events
-        .findings()
-        .into_iter()
-        .filter(|f| *f.kind() == FindingKind::FrontierPoint)
-        .collect();
+    let frontier: Vec<_> =
+        events.findings().into_iter().filter(|f| *f.kind() == FindingKind::FrontierPoint).collect();
     assert!(!frontier.is_empty());
     for finding in &frontier {
         // A measurement is Certain; a conclusion about measurements is not the
         // same thing, and the badge says so.
-        assert_eq!(
-            *finding.provenance(),
-            Provenance::Derived { rule: "pareto-dominance".into() }
-        );
+        assert_eq!(*finding.provenance(), Provenance::Derived { rule: "pareto-dominance".into() });
         assert_eq!(finding.confidence(), Confidence::High);
         assert_eq!(finding.provenance().glyph(), '◈');
     }
@@ -452,9 +444,10 @@ fn every_gate_runs_under_the_configuration_it_is_judging() {
         let builds = measured.report.outcome(Gate::Builds).expect("every candidate is gated");
         for id in &builds.evidence {
             if let Some(record) = fixture.store.get(id)
-                && let Some(line) = record.output.lines().find(|l| l.starts_with("gated at")) {
-                    seen.push(format!("{}: {}", measured.name, line));
-                }
+                && let Some(line) = record.output.lines().find(|l| l.starts_with("gated at"))
+            {
+                seen.push(format!("{}: {}", measured.name, line));
+            }
         }
     }
 

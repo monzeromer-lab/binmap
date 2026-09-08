@@ -13,8 +13,8 @@
 
 use binmap_core::artifact::Section;
 use binmap_core::error::{Error, Result};
-use object::read::{Object, ObjectSection};
 use object::SectionKind;
+use object::read::{Object, ObjectSection};
 use std::path::Path;
 
 /// Read the sections of any container `object` understands.

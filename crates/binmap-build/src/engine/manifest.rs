@@ -141,7 +141,8 @@ mod tests {
 
     #[test]
     fn an_existing_key_is_changed_in_place() {
-        let manifest = "[package]\nname = \"app\"\n\n[profile.release]\nopt-level = 3\nlto = false\n";
+        let manifest =
+            "[package]\nname = \"app\"\n\n[profile.release]\nopt-level = 3\nlto = false\n";
         let updated = with_release_profile(manifest, &configuration());
         assert!(updated.contains("opt-level = \"s\""), "{updated}");
         assert!(updated.contains("lto = \"fat\""), "{updated}");

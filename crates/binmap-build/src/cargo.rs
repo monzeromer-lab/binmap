@@ -189,11 +189,7 @@ impl BuildSystem for CargoBuildSystem {
         self.env_for(configuration)
     }
 
-    fn build(
-        &self,
-        target: &Target,
-        configuration: &BuildConfiguration,
-    ) -> Result<BuildOutcome> {
+    fn build(&self, target: &Target, configuration: &BuildConfiguration) -> Result<BuildOutcome> {
         let arguments = self.build_arguments(target, configuration);
         let invocation = ToolInvocation::new("cargo", arguments)
             .in_directory(self.runner.root().display().to_string());
@@ -289,10 +285,7 @@ mod tests {
         let system = system();
         let small = BuildConfiguration { opt_level: Some(OptLevel::Size), ..Default::default() };
         let fat = BuildConfiguration { lto: Some(Lto::Fat), ..Default::default() };
-        assert_ne!(
-            system.target_directory_for(&small),
-            system.target_directory_for(&fat)
-        );
+        assert_ne!(system.target_directory_for(&small), system.target_directory_for(&fat));
     }
 
     #[test]
@@ -333,8 +326,7 @@ mod tests {
 
     #[test]
     fn a_library_is_found_through_its_filenames_since_it_has_no_executable() {
-        let stdout =
-            r#"{"reason":"compiler-artifact","target":{"name":"lib"},"filenames":["/x/liblib.rlib"]}"#;
+        let stdout = r#"{"reason":"compiler-artifact","target":{"name":"lib"},"filenames":["/x/liblib.rlib"]}"#;
         assert_eq!(artifact_from_messages(stdout, "lib"), Some(PathBuf::from("/x/liblib.rlib")));
     }
 }

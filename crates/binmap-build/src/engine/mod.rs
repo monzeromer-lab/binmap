@@ -21,6 +21,8 @@ use binmap_core::facade::{Engine, Probe, Proposal, Request};
 use binmap_core::finding::Finding;
 use binmap_core::tool::ToolRunner;
 use binmap_core::traits::{BuildSystem, MeasurementSource, Target};
+use binmap_session::SessionStore;
+use binmap_session::artifact::{SessionArtifact, TargetMetadata};
 use binmap_verify::GatePlan;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -49,6 +51,13 @@ struct Inner {
     /// one can be written into the session artifact.
     runs: Mutex<BTreeMap<RunId, SweepState>>,
     next_run: AtomicU64,
+    /// Where sessions live.
+    ///
+    /// Until an audit found it, nothing in production ever wrote one:
+    /// `SessionStore` had no caller outside its own tests, so `F0.7`'s
+    /// persistence and `F0.8`'s resume-after-exit were both unreachable
+    /// however complete the types looked.
+    sessions: SessionStore,
 }
 
 impl BinmapEngine {
@@ -65,6 +74,8 @@ impl BinmapEngine {
         gates: GatePlan,
         benchmark: Option<Arc<dyn MeasurementSource>>,
     ) -> Result<Self> {
+        // Beside our own build products, never in the user's tree.
+        let sessions = SessionStore::new(config.target_directory.join("sessions"));
         let runner = ToolRunner::new(EvidenceStore::new(), config.root.clone());
         let builder = CargoBuildSystem::new(runner.clone(), config.target_directory.clone());
         let targets = builder.targets(&config.root)?;
@@ -81,6 +92,7 @@ impl BinmapEngine {
                 proposals: Mutex::new(Vec::new()),
                 runs: Mutex::new(BTreeMap::new()),
                 next_run: AtomicU64::new(0),
+                sessions,
             }),
         })
     }
@@ -118,6 +130,51 @@ impl BinmapEngine {
     /// [`Request::ResumeSweep`] has something to resume.
     pub fn adopt_run(&self, state: SweepState) {
         self.inner.runs.lock().expect("runs poisoned").insert(state.run.clone(), state);
+    }
+
+    /// Read back what a previous session on this target measured.
+    ///
+    /// Returns the number of runs adopted. Findings arrive already
+    /// revalidated: import re-runs the grounding check, so a hand-edited
+    /// artifact cannot inject a claim that cites evidence nobody issued.
+    pub fn restore(&self, target_id: &str) -> Result<usize> {
+        let Some(outcome) = self.inner.sessions.load(target_id)? else {
+            return Ok(0);
+        };
+
+        self.inner.runner.store().adopt(outcome.artifact.evidence.clone());
+        self.inner.findings.lock().expect("findings poisoned").extend(outcome.findings);
+
+        let mut adopted = 0;
+        for record in &outcome.artifact.runs {
+            if record.kind != "sweep" {
+                continue;
+            }
+            if let Some(Ok(state)) = outcome.artifact.run_state::<SweepState>(&record.id) {
+                self.inner.runs.lock().expect("runs poisoned").insert(state.run.clone(), state);
+                adopted += 1;
+            }
+        }
+        Ok(adopted)
+    }
+
+    /// Write the session now. Exposed for tests; production persists at the
+    /// end of every run.
+    #[doc(hidden)]
+    pub fn persist_for_test(&self, target: &Target) -> Result<()> {
+        self.inner.persist(target)
+    }
+
+    /// Export this session for someone else to read, with the redaction pass
+    /// applied (`U13`).
+    pub fn export(&self, target: &Target, path: &std::path::Path) -> Result<String> {
+        let mut artifact = SessionArtifact::new(TargetMetadata::of(target))
+            .with_findings(self.findings())
+            .with_evidence(self.inner.runner.store().records());
+        for (id, state) in self.inner.runs.lock().expect("runs poisoned").iter() {
+            artifact = artifact.with_run(id.to_string(), "sweep", state)?;
+        }
+        Ok(self.inner.sessions.export(&artifact, path)?.describe())
     }
 
     /// Run a sweep to completion on the calling thread.
@@ -161,12 +218,11 @@ impl Inner {
         events: &dyn EventSink,
         cancellation: &Cancellation,
     ) {
-        let mut state = self.runs.lock().expect("runs poisoned").get(&run).cloned().unwrap_or_else(
-            || {
+        let mut state =
+            self.runs.lock().expect("runs poisoned").get(&run).cloned().unwrap_or_else(|| {
                 let matrix = self.config.read().expect("config poisoned").matrix.clone();
                 SweepState::new(run.clone(), target.id.clone(), BuildConfiguration::expand(&matrix))
-            },
-        );
+            });
 
         let parallelism = self.config.read().expect("config poisoned").parallelism;
         let sweep = Sweep {
@@ -187,9 +243,36 @@ impl Inner {
             .extend(collector.findings.into_inner().expect("collector poisoned"));
         self.runs.lock().expect("runs poisoned").insert(run.clone(), state);
 
+        // Persist before reporting, so a session that is interrupted a moment
+        // later still has everything this run measured. A sweep the user
+        // cannot resume after closing the window is a sweep they will simply
+        // run again.
+        if let Err(error) = self.persist(target) {
+            events.emit(EngineEvent::Failed {
+                run: run.clone(),
+                error: format!("the session could not be saved: {error}"),
+            });
+        }
+
         if let Err(error) = outcome {
             events.emit(EngineEvent::Failed { run, error: error.to_string() });
         }
+    }
+
+    /// Write everything this session knows to disk.
+    fn persist(&self, target: &Target) -> Result<()> {
+        let mut artifact = SessionArtifact::new(TargetMetadata::of(target))
+            .with_findings(self.findings.lock().expect("findings poisoned").clone())
+            .with_evidence(self.runner.store().records());
+
+        // Run state travels as opaque JSON: its shape is this crate's
+        // business, and the interface must not learn it.
+        for (id, state) in self.runs.lock().expect("runs poisoned").iter() {
+            artifact = artifact.with_run(id.to_string(), "sweep", state)?;
+        }
+
+        self.sessions.save(&artifact)?;
+        Ok(())
     }
 }
 
@@ -287,8 +370,7 @@ impl Engine for BinmapEngine {
     }
 
     fn propose_configuration(&self, configuration: &BuildConfiguration) -> Result<Proposal> {
-        let manifest =
-            self.inner.config.read().expect("config poisoned").root.join("Cargo.toml");
+        let manifest = self.inner.config.read().expect("config poisoned").root.join("Cargo.toml");
 
         let current =
             std::fs::read_to_string(&manifest).map_err(|source| Error::io(&manifest, source))?;

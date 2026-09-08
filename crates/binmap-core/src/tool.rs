@@ -156,7 +156,12 @@ impl ToolSpec {
         description: impl Into<String>,
         required_tier: crate::config::TrustTier,
     ) -> Self {
-        Self { name: name.into(), description: description.into(), side_effects: true, required_tier }
+        Self {
+            name: name.into(),
+            description: description.into(),
+            side_effects: true,
+            required_tier,
+        }
     }
 }
 

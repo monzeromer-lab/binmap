@@ -271,10 +271,7 @@ impl<'a> Sweep<'a> {
             }
         }
 
-        events.emit(EngineEvent::Finished {
-            run: state.run.clone(),
-            summary: self.summary(state),
-        });
+        events.emit(EngineEvent::Finished { run: state.run.clone(), summary: self.summary(state) });
         Ok(())
     }
 
@@ -428,8 +425,8 @@ impl<'a> Sweep<'a> {
 
         let mut candidate = Candidate::new(name.clone()).citing(evidence.clone());
         if let (Some(baseline), Some(bytes)) = (state.baseline_bytes, size_bytes) {
-            candidate =
-                candidate.sized(SizeObservation { baseline_bytes: baseline, candidate_bytes: bytes });
+            candidate = candidate
+                .sized(SizeObservation { baseline_bytes: baseline, candidate_bytes: bytes });
         }
 
         // Gate the configuration — under *its own* environment.

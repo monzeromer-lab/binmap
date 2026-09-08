@@ -129,10 +129,9 @@ impl Redactor {
         out = secrets.0;
         report.record(Redaction::Secret, secrets.1);
 
-        for (value, kind) in [
-            (&self.hostname, Redaction::Hostname),
-            (&self.username, Redaction::Username),
-        ] {
+        for (value, kind) in
+            [(&self.hostname, Redaction::Hostname), (&self.username, Redaction::Username)]
+        {
             if let Some(value) = value {
                 let occurrences = out.matches(value.as_str()).count();
                 if occurrences > 0 {
@@ -217,8 +216,10 @@ mod tests {
     #[test]
     fn a_labelled_secret_loses_its_value_and_keeps_its_shape() {
         let mut report = RedactionReport::default();
-        let out = redactor()
-            .redact("CARGO_REGISTRY_TOKEN=cio1234567890abcdef\nRUSTFLAGS=-Copt-level=3", &mut report);
+        let out = redactor().redact(
+            "CARGO_REGISTRY_TOKEN=cio1234567890abcdef\nRUSTFLAGS=-Copt-level=3",
+            &mut report,
+        );
         assert_eq!(out, "CARGO_REGISTRY_TOKEN=[redacted]\nRUSTFLAGS=-Copt-level=3");
         assert_eq!(report.counts.get("values that look like credentials"), Some(&1));
     }

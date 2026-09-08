@@ -141,7 +141,12 @@ impl Default for SweepMatrix {
     /// crate, sized so a first sweep finishes rather than impresses.
     fn default() -> Self {
         Self {
-            opt_level: vec![OptLevel::Three, OptLevel::Two, OptLevel::Size, OptLevel::SizeNoLoopVec],
+            opt_level: vec![
+                OptLevel::Three,
+                OptLevel::Two,
+                OptLevel::Size,
+                OptLevel::SizeNoLoopVec,
+            ],
             lto: vec![Lto::Off, Lto::Thin, Lto::Fat],
             codegen_units: vec![16, 1],
             panic: vec![PanicStrategy::Unwind, PanicStrategy::Abort],

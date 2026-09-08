@@ -13,8 +13,7 @@ use std::path::Path;
 /// detail, and where the two disagree — headers, padding, alignment — the
 /// difference is visible rather than reconciled silently.
 pub fn measure_size(runner: &ToolRunner, artifact: &Path) -> Result<(ArtifactSize, EvidenceId)> {
-    let invocation =
-        ToolInvocation::new("binmap:measure-size", [artifact.display().to_string()]);
+    let invocation = ToolInvocation::new("binmap:measure-size", [artifact.display().to_string()]);
     let pending = runner.store().begin(invocation);
 
     let metadata = std::fs::metadata(artifact).map_err(|source| {

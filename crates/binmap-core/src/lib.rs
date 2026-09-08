@@ -16,8 +16,8 @@ pub mod capability;
 pub mod config;
 pub mod configuration;
 pub mod error;
-pub mod evidence;
 pub mod event;
+pub mod evidence;
 pub mod facade;
 pub mod finding;
 pub mod gate;
@@ -39,4 +39,6 @@ pub use facade::{Engine, Probe, ProbeStatus, Proposal, Request};
 pub use finding::FindingDraft;
 pub use gate::{Gate, GateOutcome, GateResult, VerificationReport};
 pub use tool::{ToolRegistry, ToolRunner, ToolSpec};
-pub use traits::{ArtifactReader, BuildSystem, MeasurementSource, Symbolizer, Target, TargetFamily};
+pub use traits::{
+    ArtifactReader, BuildSystem, MeasurementSource, Symbolizer, Target, TargetFamily,
+};

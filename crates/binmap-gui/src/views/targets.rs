@@ -185,14 +185,8 @@ impl RenderOnce for TargetView {
             .child(
                 Section::titled("Workspace", theme)
                     .child(fact("package", target.package.clone(), theme))
-                    .child(fact(
-                        "manifest",
-                        target.manifest.display().to_string(),
-                        theme,
-                    ))
-                    .when_some(self.root, |section, root| {
-                        section.child(fact("path", root, theme))
-                    })
+                    .child(fact("manifest", target.manifest.display().to_string(), theme))
+                    .when_some(self.root, |section, root| section.child(fact("path", root, theme)))
                     .child(fact("target id", target.id.clone(), theme)),
             )
             .child(
@@ -213,15 +207,10 @@ impl RenderOnce for TargetView {
                                 .text_size(type_scale::FS_13)
                                 .child("Sweep build configurations"),
                         )
-                        .child(
-                            div()
-                                .text_size(type_scale::FS_11)
-                                .text_color(c.text_muted)
-                                .child(
-                                    "The sweep sets profile settings per build. \
+                        .child(div().text_size(type_scale::FS_11).text_color(c.text_muted).child(
+                            "The sweep sets profile settings per build. \
                                      Your Cargo.toml is never modified.",
-                                ),
-                        ),
+                        )),
                 ),
             )
     }

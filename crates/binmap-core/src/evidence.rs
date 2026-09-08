@@ -133,9 +133,7 @@ impl Evidence {
             hasher.update(argument.as_bytes());
         }
         hasher.update([0u8]);
-        hasher.update(
-            self.invocation.working_directory.as_deref().unwrap_or_default().as_bytes(),
-        );
+        hasher.update(self.invocation.working_directory.as_deref().unwrap_or_default().as_bytes());
         hasher.update([0u8]);
         hasher.update(self.exit_code.to_le_bytes());
         hasher.update([0u8]);
@@ -288,8 +286,6 @@ impl EvidenceStore {
         refused
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

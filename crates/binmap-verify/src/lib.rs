@@ -12,8 +12,8 @@
 //! variant and the interface cannot accidentally render it green.
 
 use binmap_core::config::TrustTier;
-pub use binmap_core::gate::{Gate, GateOutcome, GateResult, VerificationReport};
 use binmap_core::evidence::{EvidenceId, ToolInvocation};
+pub use binmap_core::gate::{Gate, GateOutcome, GateResult, VerificationReport};
 use binmap_core::tool::ToolRunner;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -259,35 +259,30 @@ impl<'a> Harness<'a> {
             let detail = first_error_line(&output.stderr)
                 .unwrap_or_else(|| format!("the build exited {}", output.exit_code));
             return (
-                GateOutcome::new(Gate::Builds, GateResult::Failed, detail)
-                    .citing(output.evidence),
+                GateOutcome::new(Gate::Builds, GateResult::Failed, detail).citing(output.evidence),
                 None,
             );
         }
 
         let warnings = count_warnings(&output.stderr);
-        let outcome = GateOutcome::new(
-            Gate::Builds,
-            GateResult::Passed,
-            format!("{:?}", output.duration),
-        )
-        .citing(output.evidence);
+        let outcome =
+            GateOutcome::new(Gate::Builds, GateResult::Passed, format!("{:?}", output.duration))
+                .citing(output.evidence);
         (outcome, Some(warnings))
     }
 
     /// Judged against the baseline, never against zero.
     fn gate_warnings(&self, warnings: Option<usize>) -> GateOutcome {
         let Some(warnings) = warnings else {
-            return GateOutcome::skipped(Gate::NoNewWarnings, "the build produced no output to read");
+            return GateOutcome::skipped(
+                Gate::NoNewWarnings,
+                "the build produced no output to read",
+            );
         };
         let baseline = self.plan.baseline_warnings;
         if warnings > baseline {
             let added = warnings - baseline;
-            GateOutcome::new(
-                Gate::NoNewWarnings,
-                GateResult::Failed,
-                format!("{added} new"),
-            )
+            GateOutcome::new(Gate::NoNewWarnings, GateResult::Failed, format!("{added} new"))
         } else {
             GateOutcome::new(Gate::NoNewWarnings, GateResult::Passed, "0 new")
         }

@@ -94,10 +94,16 @@ pub struct RunProgress {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunPhase {
     Running,
-    Finished { summary: String },
+    Finished {
+        summary: String,
+    },
     /// Cancelled, keeping everything measured. Not an error.
-    Cancelled { completed: usize },
-    Failed { error: String },
+    Cancelled {
+        completed: usize,
+    },
+    Failed {
+        error: String,
+    },
 }
 
 impl RunProgress {
@@ -219,10 +225,7 @@ impl AppState {
 
     /// The findings that belong under one view.
     pub fn findings_for(&self, view: View) -> Vec<&Finding> {
-        self.findings
-            .iter()
-            .filter(|finding| view_for_kind(finding.kind()) == Some(view))
-            .collect()
+        self.findings.iter().filter(|finding| view_for_kind(finding.kind()) == Some(view)).collect()
     }
 
     pub fn select_finding(&mut self, id: &str) -> bool {

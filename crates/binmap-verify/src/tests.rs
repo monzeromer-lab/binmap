@@ -121,11 +121,10 @@ fn a_size_increase_passes_the_gate_and_says_so_plainly() {
 fn a_result_inside_the_noise_floor_is_inconclusive_and_never_a_pass() {
     let runner = runner();
     let plan = GatePlan::new(shell("true")).testing_with(shell("true"));
-    let candidate = Candidate::new("c").sized(measured(10, 10)).benchmarked(
-        BenchmarkVerdict::Inconclusive {
+    let candidate =
+        Candidate::new("c").sized(measured(10, 10)).benchmarked(BenchmarkVerdict::Inconclusive {
             detail: "the 1.2% difference is inside this machine's 3.0% noise floor".into(),
-        },
-    );
+        });
     let report = Harness::new(&runner, plan).verify(&candidate);
 
     // It does not reject the candidate, and it does not claim a win either.
@@ -139,9 +138,10 @@ fn a_result_inside_the_noise_floor_is_inconclusive_and_never_a_pass() {
 fn a_significant_regression_rejects_the_candidate() {
     let runner = runner();
     let plan = GatePlan::new(shell("true")).testing_with(shell("true"));
-    let candidate = Candidate::new("c").sized(measured(10, 10)).benchmarked(
-        BenchmarkVerdict::Regressed { detail: "8.4% slower, well outside the noise floor".into() },
-    );
+    let candidate =
+        Candidate::new("c").sized(measured(10, 10)).benchmarked(BenchmarkVerdict::Regressed {
+            detail: "8.4% slower, well outside the noise floor".into(),
+        });
     let report = Harness::new(&runner, plan).verify(&candidate);
     assert_eq!(report.rejected_by(), Some(Gate::BenchmarkNotWorse));
 }
@@ -149,9 +149,8 @@ fn a_significant_regression_rejects_the_candidate() {
 #[test]
 fn sanitizers_run_only_when_unsafe_is_touched_and_the_skip_states_why() {
     let runner = runner();
-    let plan = GatePlan::new(shell("true"))
-        .testing_with(shell("true"))
-        .sanitizing_with(shell("exit 1"));
+    let plan =
+        GatePlan::new(shell("true")).testing_with(shell("true")).sanitizing_with(shell("exit 1"));
     let safe = Candidate::new("c").sized(measured(10, 10));
     let report = Harness::new(&runner, plan).verify(&safe);
 

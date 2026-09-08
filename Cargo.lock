@@ -686,6 +686,7 @@ version = "0.1.0"
 dependencies = [
  "binmap-core",
  "binmap-measure",
+ "binmap-session",
  "binmap-verify",
  "cargo_metadata",
  "serde",
