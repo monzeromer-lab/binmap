@@ -174,7 +174,7 @@ impl RenderOnce for ProfileLab {
                     // columns are squeezed to nothing is unreadable, and the
                     // panel's content is the same width whatever the window
                     // does.
-                    .child(div().flex_1().min_w_0().child(
+                    .child(div().flex_1().min_w_0().h_full().child(
                         Section::titled("Configurations", theme).flush().child(table(
                             &sweep,
                             selected.as_ref(),
@@ -183,7 +183,7 @@ impl RenderOnce for ProfileLab {
                         )),
                     ))
                     .when_some(selected, |d, measurement| {
-                        d.child(div().w(px(330.)).flex_none().child(selected_panel(
+                        d.child(div().w(px(330.)).flex_none().h_full().child(selected_panel(
                             &sweep,
                             &measurement,
                             theme,
@@ -623,7 +623,16 @@ fn selected_panel(
         .child(metric_row(sweep, measurement, theme))
         .child(div().h(space::S4))
         .child(eyebrow("Gates", theme))
-        .child(gate_rows(&measurement.gates, theme))
+        // The gates scroll; the action below does not. A primary action that
+        // scrolls out of the window is one the user concludes does not exist.
+        .child(
+            div()
+                .id("gate-rows")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .child(gate_rows(&measurement.gates, theme)),
+        )
         .when_some(sweep.noise_floor_label(), |section, floor| {
             section.child(
                 div().pt(space::S4).text_size(type_scale::FS_11).text_color(c.text_muted).child(
@@ -639,6 +648,7 @@ fn selected_panel(
         .child(if applicable {
             clickable(div().id("apply"), dispatch, Action::OpenApplyDialog(id))
                 .flex()
+                .flex_none()
                 .items_center()
                 .justify_center()
                 .mt(space::S4)
@@ -656,6 +666,7 @@ fn selected_panel(
             // refuses it as well; this is so the control never looks
             // available for something that cannot happen.
             div()
+                .flex_none()
                 .mt(space::S4)
                 .text_size(type_scale::FS_11)
                 .text_color(c.text_muted)
