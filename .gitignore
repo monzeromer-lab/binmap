@@ -2,3 +2,5 @@
 Cargo.lock.bak
 corpus/*/target
 corpus/*/*/target
+proptest-regressions/
+crates/*/tests/*.proptest-regressions

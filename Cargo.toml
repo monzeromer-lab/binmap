@@ -25,6 +25,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/monzeromer-lab/binmap"
 
 [workspace.dependencies]
+proptest = "1.11"
 binmap-core = { path = "crates/binmap-core" }
 binmap-verify = { path = "crates/binmap-verify" }
 binmap-build = { path = "crates/binmap-build" }
