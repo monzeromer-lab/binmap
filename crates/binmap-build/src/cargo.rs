@@ -227,6 +227,10 @@ impl BuildSystem for CargoBuildSystem {
         self.env_for(configuration)
     }
 
+    fn build_directory(&self, configuration: &BuildConfiguration) -> Option<PathBuf> {
+        Some(self.target_directory_for(configuration))
+    }
+
     fn build(&self, target: &Target, configuration: &BuildConfiguration) -> Result<BuildOutcome> {
         let arguments = self.build_arguments(target, configuration);
         let invocation = ToolInvocation::new("cargo", arguments)

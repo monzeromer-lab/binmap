@@ -81,10 +81,14 @@ fn capabilities_for(kind: &TargetKind, wasm: bool) -> Capabilities {
         return found.into_iter().collect();
     }
 
-    // Phase 1 adds these for real. Until the symbol reader exists, declaring
-    // them would put entries in the nav rail that open on nothing.
-    let _single_artifact =
-        matches!(kind, TargetKind::Bin | TargetKind::CDyLib | TargetKind::StaticLib);
+    // A single linked artifact has a symbol table, so its bytes can be
+    // attributed and its generics grouped. An rlib is an archive of object
+    // files: attributing bytes inside one answers a different question, so it
+    // is not claimed.
+    if matches!(kind, TargetKind::Bin | TargetKind::CDyLib | TargetKind::StaticLib) {
+        found.push(Capability::SizeAttribution);
+        found.push(Capability::Monomorphization);
+    }
 
     found.into_iter().collect()
 }
@@ -293,6 +297,18 @@ mod tests {
     }
 
     #[test]
+    fn a_binary_can_have_its_bytes_attributed_and_an_rlib_cannot() {
+        // An rlib is an archive of object files; attributing bytes inside one
+        // answers a different question from attributing a linked binary's.
+        let binary = capabilities_for(&TargetKind::Bin, false);
+        assert!(binary.has(Capability::SizeAttribution));
+        assert!(binary.has(Capability::Monomorphization));
+
+        let library = capabilities_for(&TargetKind::Lib, false);
+        assert!(!library.has(Capability::SizeAttribution));
+    }
+
+    #[test]
     fn a_native_target_does_not_claim_compressed_size() {
         // It is not served over a network, so the number would be noise.
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
@@ -315,8 +331,6 @@ mod tests {
                 Capability::Disassembly,
                 Capability::PerformanceAttribution,
                 Capability::ReplayDebugging,
-                Capability::SizeAttribution,
-                Capability::Monomorphization,
             ] {
                 assert!(
                     !target.capabilities.has(unshipped),
@@ -333,7 +347,11 @@ mod tests {
         let runner = ToolRunner::new(EvidenceStore::new(), root);
         let (_, targets) = discover(&runner, root).unwrap();
         let target = targets.first().expect("our own workspace has targets");
-        assert_eq!(target.capabilities.sentence(), "Binmap can sweep build configurations.");
+        assert!(
+            target.capabilities.sentence().starts_with("Binmap can sweep build configurations"),
+            "{}",
+            target.capabilities.sentence()
+        );
         // Nothing claims a capability Phase 0 has not built.
         assert!(!target.capabilities.has(Capability::ReplayDebugging));
     }

@@ -76,6 +76,12 @@ pub fn apply(config: &mut ProjectConfig) -> Result<bool> {
             Some(BenchmarkCommand { program: program.to_string(), arguments, samples });
     }
 
+    if let Some(keep) =
+        document.get("sweep").and_then(|s| s.get("keep-build-directories")).and_then(Item::as_bool)
+    {
+        config.keep_build_directories = keep;
+    }
+
     if let Some(profile) =
         document.get("sweep").and_then(|s| s.get("profile")).and_then(Item::as_str)
     {

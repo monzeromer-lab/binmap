@@ -89,6 +89,15 @@ pub trait BuildSystem: Send + Sync {
         &self,
         configuration: &BuildConfiguration,
     ) -> std::collections::BTreeMap<String, String>;
+
+    /// Where this configuration's build products go, if they go anywhere the
+    /// caller may remove.
+    ///
+    /// `None` means "nothing here is safe to reclaim" — the honest answer for
+    /// a backend that shares one directory across configurations.
+    fn build_directory(&self, _configuration: &BuildConfiguration) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// Reads a built artifact's structure.

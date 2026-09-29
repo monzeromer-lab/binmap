@@ -341,6 +341,8 @@ impl Inner {
             });
 
         let parallelism = self.config.read().expect("config poisoned").parallelism;
+        let keep_build_directories =
+            self.config.read().expect("config poisoned").keep_build_directories;
 
         // Give the harness a sanitizer if the machine has one. Without this,
         // MiriClean reported "no sanitizer is available" on machines that had
@@ -382,6 +384,7 @@ impl Inner {
             benchmark: self.benchmark.as_deref(),
             options: SweepOptions::new(gates)
                 .with_parallelism(parallelism)
+                .keeping_build_directories(keep_build_directories)
                 .touching_unsafe(touches_unsafe),
         };
 

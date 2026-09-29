@@ -61,6 +61,10 @@ impl BuildSystem for FakeCargo {
         env
     }
 
+    fn build_directory(&self, configuration: &BuildConfiguration) -> Option<PathBuf> {
+        Some(self.directory.join(configuration.name()))
+    }
+
     fn build(&self, _target: &Target, configuration: &BuildConfiguration) -> Result<BuildOutcome> {
         self.builds.fetch_add(1, Ordering::SeqCst);
         let name = configuration.name();
@@ -83,8 +87,11 @@ impl BuildSystem for FakeCargo {
         }
 
         let bytes = self.sizes.get(&name).copied().unwrap_or(self.default_size);
-        std::fs::create_dir_all(&self.directory).unwrap();
-        let artifact = self.directory.join(&name);
+        // Per configuration, like the real backend — so reclamation has
+        // something real to reclaim.
+        let directory = self.directory.join(&name);
+        std::fs::create_dir_all(&directory).unwrap();
+        let artifact = directory.join("app");
         std::fs::write(&artifact, vec![0u8; bytes as usize]).unwrap();
         let evidence = self.runner.store().complete(pending, format!("built {name}"), 0);
 
@@ -538,4 +545,54 @@ fn per_configuration_section_sizes_survive_the_sweep() {
         "F0.4 asks for per-section size per configuration; the sweep measures it and \
          throws it away"
     );
+}
+
+#[test]
+fn a_measured_configuration_gives_its_build_directory_back() {
+    // TOOLING §3.2 warned that a target directory per configuration costs
+    // disk and asked for a flag to trade it. There was no flag, and a
+    // ninety-six point sweep of a twenty-five dependency project wrote 8.6 GB
+    // and filled a 468 GB disk.
+    let fixture = fixture();
+    let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 4096);
+    let sweep = Sweep {
+        builder: &builder,
+        runner: &fixture.runner,
+        benchmark: None,
+        options: SweepOptions::new(passing_gates()),
+    };
+
+    let matrix = small_matrix();
+    let mut state = state_for(&matrix);
+    sweep.run(&target(), &mut state, &RecordedEvents::new(), &Cancellation::new()).unwrap();
+
+    for measured in &state.measured {
+        let artifact = measured.artifact.as_ref().expect("it built");
+        // The artifact survives, because a benchmark pass still needs it.
+        assert!(artifact.exists(), "{} lost its artifact", measured.name);
+        // And it is no longer inside the build directory, which is gone.
+        let built_in = builder.build_directory(&measured.configuration).unwrap();
+        assert!(!built_in.exists(), "{} kept its build directory", measured.name);
+        assert!(!artifact.starts_with(&built_in));
+    }
+}
+
+#[test]
+fn keeping_build_directories_is_available_for_anyone_who_wants_them() {
+    let fixture = fixture();
+    let builder = FakeCargo::new(fixture.runner.clone(), fixture.path.clone(), 1024);
+    let sweep = Sweep {
+        builder: &builder,
+        runner: &fixture.runner,
+        benchmark: None,
+        options: SweepOptions::new(passing_gates()).keeping_build_directories(true),
+    };
+
+    let matrix = small_matrix();
+    let mut state = state_for(&matrix);
+    sweep.run(&target(), &mut state, &RecordedEvents::new(), &Cancellation::new()).unwrap();
+
+    let measured = state.measured.first().expect("something was measured");
+    let built_in = builder.build_directory(&measured.configuration).unwrap();
+    assert!(built_in.exists(), "the directory was reclaimed despite the flag");
 }

@@ -36,6 +36,19 @@ use std::time::Duration;
 pub struct SweepOptions {
     /// The cap on concurrent builds.
     pub parallelism: usize,
+    /// Keep every configuration's build directory after measuring it.
+    ///
+    /// Off by default, and that default was learned the hard way: a
+    /// ninety-six configuration sweep of a project with twenty-five
+    /// dependencies wrote 8.6 GB of per-configuration target directories and
+    /// filled a 468 GB disk. TOOLING §3.2 warned about exactly this and asked
+    /// for a flag to trade disk against rebuild time; this is that flag,
+    /// pointing the other way from how it was first built.
+    ///
+    /// Reclaiming costs nothing a resume needs. A resumed sweep skips the
+    /// configurations it already measured, so their intermediates are never
+    /// read again — only the artifact is, for timing, and that is kept.
+    pub keep_build_directories: bool,
     /// Whether the project contains `unsafe`, so `MiriClean` knows to run.
     ///
     /// In a sweep the "change" is the whole build, so this is a property of
@@ -51,7 +64,18 @@ pub struct SweepOptions {
 
 impl SweepOptions {
     pub fn new(gates: GatePlan) -> Self {
-        Self { parallelism: 1, noise_floor_samples: 7, gates, touches_unsafe: false }
+        Self {
+            parallelism: 1,
+            noise_floor_samples: 7,
+            gates,
+            keep_build_directories: false,
+            touches_unsafe: false,
+        }
+    }
+
+    pub fn keeping_build_directories(mut self, keep: bool) -> Self {
+        self.keep_build_directories = keep;
+        self
     }
 
     pub fn touching_unsafe(mut self, touches_unsafe: bool) -> Self {
@@ -80,10 +104,13 @@ pub struct MeasuredConfiguration {
     /// The stable name, which is also the key a resumed sweep looks up.
     pub name: String,
     pub built: bool,
-    /// Where the build put the artifact. Kept so a benchmark pass, which runs
-    /// after every build, times the right binary — and re-checked before use,
-    /// because a path that outlived its build is how a tool measures the wrong
-    /// binary convincingly.
+    /// Where the artifact is now.
+    ///
+    /// Kept so a benchmark pass, which runs after every build, times the right
+    /// binary — and re-checked before use, because a path that outlived its
+    /// build is how a tool measures the wrong binary convincingly. Where build
+    /// directories are reclaimed this points at the preserved copy rather than
+    /// into the directory that was removed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact: Option<std::path::PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -485,6 +512,17 @@ impl<'a> Sweep<'a> {
             evidence.extend(outcome.evidence.iter().cloned());
         }
 
+        // Reclaim the build directory, keeping the artifact.
+        //
+        // Everything else in it is intermediates a resumed sweep never reads:
+        // resume skips configurations it already measured. Keeping them cost
+        // 8.6 GB on a twenty-five dependency project and filled the disk.
+        let artifact = if self.options.keep_build_directories {
+            artifact
+        } else {
+            self.reclaim(configuration, artifact)
+        };
+
         MeasuredConfiguration {
             configuration: configuration.clone(),
             name,
@@ -501,6 +539,42 @@ impl<'a> Sweep<'a> {
             report,
             evidence,
         }
+    }
+
+    /// Preserve the artifact and remove everything else this configuration
+    /// built.
+    ///
+    /// Returns where the artifact now is. On any failure the original path is
+    /// returned untouched and the directory is left alone: losing a
+    /// measurement to a housekeeping error would be a poor trade for the disk.
+    fn reclaim(
+        &self,
+        configuration: &BuildConfiguration,
+        artifact: Option<std::path::PathBuf>,
+    ) -> Option<std::path::PathBuf> {
+        let artifact = artifact?;
+        let directory = self.builder.build_directory(configuration)?;
+
+        // Only ever inside our own directory, and only when the artifact is
+        // actually in it.
+        if !artifact.starts_with(&directory) {
+            return Some(artifact);
+        }
+
+        let kept = directory.parent()?.join("artifacts");
+        if std::fs::create_dir_all(&kept).is_err() {
+            return Some(artifact);
+        }
+        let destination = kept.join(format!(
+            "{}-{}",
+            configuration.name(),
+            artifact.file_name()?.to_string_lossy()
+        ));
+        if std::fs::copy(&artifact, &destination).is_err() {
+            return Some(artifact);
+        }
+        let _ = std::fs::remove_dir_all(&directory);
+        Some(destination)
     }
 
     /// Time the configurations that passed their gates — one at a time, always.

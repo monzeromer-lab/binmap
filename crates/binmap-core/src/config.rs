@@ -277,6 +277,14 @@ pub struct ProjectConfig {
     pub test_command: Option<BenchmarkCommand>,
     #[serde(default)]
     pub matrix: SweepMatrix,
+    /// Keep every configuration's build directory rather than reclaiming it.
+    ///
+    /// Off by default. A ninety-six configuration sweep of a project with
+    /// twenty-five dependencies wrote 8.6 GB and filled the disk; a resumed
+    /// sweep never reads those intermediates, because resume skips the
+    /// configurations they belong to.
+    #[serde(default)]
+    pub keep_build_directories: bool,
     /// The profile to sweep.
     ///
     /// `release` unless the project ships from somewhere else. `F0.1` asks for
@@ -312,6 +320,7 @@ impl ProjectConfig {
             benchmark: None,
             test_command: None,
             matrix: SweepMatrix::default(),
+            keep_build_directories: false,
             profile: release_profile(),
             target_directory,
             parallelism: default_parallelism(),
