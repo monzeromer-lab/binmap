@@ -681,6 +681,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "binmap-binary"
+version = "0.1.0"
+dependencies = [
+ "binmap-core",
+ "object 0.40.0",
+ "proptest",
+ "rustc-demangle",
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "binmap-build"
 version = "0.1.0"
 dependencies = [

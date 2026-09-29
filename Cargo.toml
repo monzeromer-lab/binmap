@@ -4,6 +4,7 @@ members = [
     "crates/binmap",
     "crates/binmap-core",
     "crates/binmap-verify",
+    "crates/binmap-binary",
     "crates/binmap-build",
     "crates/binmap-measure",
     "crates/binmap-session",
@@ -26,8 +27,10 @@ repository = "https://github.com/monzeromer-lab/binmap"
 
 [workspace.dependencies]
 proptest = "1.11"
+rustc-demangle = "0.1"
 binmap-core = { path = "crates/binmap-core" }
 binmap-verify = { path = "crates/binmap-verify" }
+binmap-binary = { path = "crates/binmap-binary" }
 binmap-build = { path = "crates/binmap-build" }
 binmap-measure = { path = "crates/binmap-measure" }
 binmap-session = { path = "crates/binmap-session" }
