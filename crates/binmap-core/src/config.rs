@@ -150,7 +150,12 @@ impl Default for SweepMatrix {
             lto: vec![Lto::Off, Lto::Thin, Lto::Fat],
             codegen_units: vec![16, 1],
             panic: vec![PanicStrategy::Unwind, PanicStrategy::Abort],
-            strip: vec![Strip::None, Strip::Symbols],
+            // Not `Strip::None`. Cargo's release profile strips debug info by
+            // default, so setting `none` explicitly turns that off and costs
+            // megabytes — a real configuration, and one nobody should ship. It
+            // stays available through binmap.toml for anyone who wants to see
+            // the number; it does not get half the default sweep's builds.
+            strip: vec![Strip::Debuginfo, Strip::Symbols],
             debug: vec![DebugInfo::None],
             overflow_checks: vec![false],
             build_std: Vec::new(),

@@ -1,0 +1,17 @@
+[package]
+name = "stress"
+version = "0.1.0"
+edition = "2024"
+description = """
+Reference corpus, entry seven: one small crate that exercises as many of \
+Binmap's paths as a small crate can — every size driver, every gate, and the \
+failure modes that are otherwise only reachable through a test double."""
+
+[[bin]]
+name = "stress"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3

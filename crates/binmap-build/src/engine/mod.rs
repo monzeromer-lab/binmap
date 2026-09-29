@@ -352,11 +352,22 @@ impl Inner {
             ));
         }
 
+        // And tell it whether there is any unsafe to check. Nothing set this,
+        // so MiriClean reported "the change does not touch unsafe" for every
+        // project including ones full of it — and the FFI caveat, the sentence
+        // §6 says the interface must show, could never appear.
+        let root = self.config.read().expect("config poisoned").root.clone();
+        let unsafety = crate::unsafety::Unsafety::scan(&root);
+        gates = gates.with_substantial_ffi(unsafety.foreign_calls);
+
+        let touches_unsafe = unsafety.present;
         let sweep = Sweep {
             builder: &self.builder,
             runner: &self.runner,
             benchmark: self.benchmark.as_deref(),
-            options: SweepOptions::new(gates).with_parallelism(parallelism),
+            options: SweepOptions::new(gates)
+                .with_parallelism(parallelism)
+                .touching_unsafe(touches_unsafe),
         };
 
         // Findings are kept as they stream, so a view opened mid-run has

@@ -13,6 +13,7 @@ pub mod environment;
 pub mod project;
 pub mod settings;
 pub mod sweep;
+pub mod unsafety;
 
 pub use cargo::CargoBuildSystem;
 pub use engine::BinmapEngine;

@@ -36,6 +36,12 @@ use std::time::Duration;
 pub struct SweepOptions {
     /// The cap on concurrent builds.
     pub parallelism: usize,
+    /// Whether the project contains `unsafe`, so `MiriClean` knows to run.
+    ///
+    /// In a sweep the "change" is the whole build, so this is a property of
+    /// the project rather than of a patch. Nothing set it, and the gate was
+    /// skipped everywhere as a result.
+    pub touches_unsafe: bool,
     /// How many times to run one unchanged binary to establish the machine's
     /// noise floor.
     pub noise_floor_samples: u32,
@@ -45,7 +51,12 @@ pub struct SweepOptions {
 
 impl SweepOptions {
     pub fn new(gates: GatePlan) -> Self {
-        Self { parallelism: 1, noise_floor_samples: 7, gates }
+        Self { parallelism: 1, noise_floor_samples: 7, gates, touches_unsafe: false }
+    }
+
+    pub fn touching_unsafe(mut self, touches_unsafe: bool) -> Self {
+        self.touches_unsafe = touches_unsafe;
+        self
     }
 
     pub fn with_parallelism(mut self, parallelism: usize) -> Self {
@@ -445,7 +456,9 @@ impl<'a> Sweep<'a> {
         // design's section breakdown a source.
         let sections = measured_size.map(|size| size.sections);
 
-        let mut candidate = Candidate::new(name.clone()).citing(evidence.clone());
+        let mut candidate = Candidate::new(name.clone())
+            .citing(evidence.clone())
+            .touching_unsafe(self.options.touches_unsafe);
         if let (Some(baseline), Some(bytes)) = (state.baseline_bytes, size_bytes) {
             candidate = candidate
                 .sized(SizeObservation { baseline_bytes: baseline, candidate_bytes: bytes });

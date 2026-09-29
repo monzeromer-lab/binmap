@@ -1,0 +1,22 @@
+# A narrow matrix that still reaches every gate.
+#
+# overflow-checks is the axis that makes TestsPass fail for real; opt-level=z
+# is the one that makes BenchmarkNotWorse fail, because optimising for size
+# costs speed. Between them the sweep has two different rejections and a real
+# size difference to find, in eight builds rather than ninety-six.
+#
+# `strip` is deliberately absent. Cargo's release profile strips debug info by
+# default, and setting `strip = "none"` turns that off and costs megabytes —
+# which this file did, until a sweep over this very crate made it obvious.
+
+[sweep]
+opt-level = ["3", "z"]
+panic = ["unwind", "abort"]
+overflow-checks = [false, true]
+lto = [false]
+codegen-units = [16]
+
+[benchmark]
+program = "{artifact}"
+arguments = ["--bench"]
+samples = 5
