@@ -58,6 +58,13 @@ pub struct GatePlan {
     pub build: ToolInvocation,
     /// The user's test command where they declared one; `cargo test` otherwise.
     pub test: Option<ToolInvocation>,
+    /// Why there is no test command, when there is a reason worth giving.
+    ///
+    /// Without this the skip says "no test command is declared", which is true
+    /// and unhelpful for a cross-compiled project — the tests exist, they
+    /// simply cannot run on this machine, and a user reading "not declared"
+    /// goes looking for the declaration.
+    pub no_tests_because: Option<String>,
     /// The sanitizer command. `None` when no sanitizer is available, which is
     /// reported as a skip with that reason rather than as a pass.
     pub miri: Option<ToolInvocation>,
@@ -81,6 +88,7 @@ impl GatePlan {
         Self {
             build,
             test: None,
+            no_tests_because: None,
             miri: None,
             baseline_warnings: 0,
             significance: 0.05,
@@ -91,6 +99,17 @@ impl GatePlan {
 
     pub fn testing_with(mut self, test: ToolInvocation) -> Self {
         self.test = Some(test);
+        self.no_tests_because = None;
+        self
+    }
+
+    /// Declare that tests cannot run here, and why.
+    ///
+    /// The reason is not optional: a gate that cannot run owes the reader an
+    /// explanation more than one that ran and passed does.
+    pub fn without_tests(mut self, reason: impl Into<String>) -> Self {
+        self.test = None;
+        self.no_tests_because = Some(reason.into());
         self
     }
 
@@ -290,7 +309,12 @@ impl<'a> Harness<'a> {
 
     fn gate_tests(&self) -> GateOutcome {
         let Some(test) = self.plan.test.clone() else {
-            return GateOutcome::skipped(Gate::TestsPass, "no test command is declared");
+            let reason = self
+                .plan
+                .no_tests_because
+                .clone()
+                .unwrap_or_else(|| "no test command is declared".to_string());
+            return GateOutcome::skipped(Gate::TestsPass, reason);
         };
         match self.runner.run_with_env(test, &self.plan.env) {
             Ok(output) if output.succeeded() => {

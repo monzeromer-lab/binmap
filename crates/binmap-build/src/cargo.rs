@@ -53,6 +53,11 @@ impl CargoBuildSystem {
         &self.profile
     }
 
+    /// What this toolchain builds for by default.
+    pub fn host(&self) -> Option<&str> {
+        self.host_triple.as_deref()
+    }
+
     /// Ask rustc what it builds for. `-Zbuild-std` needs an explicit
     /// `--target`, and guessing the triple is how a sweep produces ninety-six
     /// identical failures.

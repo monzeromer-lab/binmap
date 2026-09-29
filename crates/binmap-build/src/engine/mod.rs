@@ -361,6 +361,20 @@ impl Inner {
         let unsafety = crate::unsafety::Unsafety::scan(&root);
         gates = gates.with_substantial_ffi(unsafety.foreign_calls);
 
+        // A cross-compiled project's tests are built for a machine that is not
+        // this one, so `cargo test` compiles them and then cannot run them.
+        // Reporting that as a failing suite condemned every configuration of a
+        // perfectly healthy crate — corpus/wasm swept ninety-six and passed
+        // none of them.
+        if let Some(target) = crate::project::default_target(&root)
+            && !self.builder.host().is_some_and(|host| host == target)
+        {
+            gates = gates.without_tests(format!(
+                "this project builds for {target}, so its tests cannot run on this machine. \
+                 Declare a test command in binmap.toml if you have a runner for it."
+            ));
+        }
+
         let touches_unsafe = unsafety.present;
         let sweep = Sweep {
             builder: &self.builder,

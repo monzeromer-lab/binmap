@@ -105,11 +105,13 @@ fn is_measurable(kind: &TargetKind) -> bool {
     )
 }
 
-/// Whether this project builds for WebAssembly by default.
+/// The compilation target this project builds for by default, if it names one.
 ///
-/// Read from `.cargo/config.toml`, which is where a wasm-only crate says so —
-/// and the corpus has one, so this is not hypothetical.
-fn builds_for_wasm(root: &Path) -> bool {
+/// From `.cargo/config.toml`'s `build.target`. A project that names one is
+/// cross-compiling, and that changes what the gates can do: `cargo test`
+/// inherits the setting, so the tests are built for a machine that is not this
+/// one and cannot be run here.
+pub fn default_target(root: &Path) -> Option<String> {
     let config = root.join(".cargo").join("config.toml");
     std::fs::read_to_string(config)
         .ok()
@@ -120,7 +122,14 @@ fn builds_for_wasm(root: &Path) -> bool {
                 .and_then(|build| build.get("target"))
                 .and_then(|target| target.as_str().map(str::to_string))
         })
-        .is_some_and(|triple| triple.starts_with("wasm"))
+}
+
+/// Whether this project builds for WebAssembly by default.
+///
+/// Read from `.cargo/config.toml`, which is where a wasm-only crate says so —
+/// and the corpus has one, so this is not hypothetical.
+fn builds_for_wasm(root: &Path) -> bool {
+    default_target(root).is_some_and(|triple| triple.starts_with("wasm"))
 }
 
 /// Find the project at `root` and enumerate what it offers.
