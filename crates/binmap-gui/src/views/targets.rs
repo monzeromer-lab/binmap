@@ -221,6 +221,55 @@ impl RenderOnce for TargetView {
                     .when_some(self.root, |section, root| section.child(fact("path", root, theme)))
                     .child(fact("target id", target.id.clone(), theme)),
             )
+            // What this target cannot do, and when it will be able to. §2.5
+            // keeps the absent views out of the nav rail; this is where the
+            // reason lives, so "not yet" reads differently from "never".
+            .child(
+                Section::titled("Not yet available for this target", theme).child(
+                    div().flex().flex_col().gap(space::S4).children(
+                        [
+                            binmap_core::Capability::SizeAttribution,
+                            binmap_core::Capability::Monomorphization,
+                            binmap_core::Capability::CrashAnalysis,
+                            binmap_core::Capability::PerformanceAttribution,
+                            binmap_core::Capability::ReplayDebugging,
+                        ]
+                        .into_iter()
+                        .filter(|capability| !target.capabilities.has(*capability))
+                        .map(move |capability| {
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap(space::S8)
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .text_size(type_scale::FS_12)
+                                        .text_color(c.text_muted)
+                                        .child(format!(
+                                            "{}{}",
+                                            capability
+                                                .describe()
+                                                .chars()
+                                                .next()
+                                                .map(|first| first.to_uppercase().to_string())
+                                                .unwrap_or_default(),
+                                            &capability.describe()[1..]
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .font_family("JetBrains Mono")
+                                        .text_size(type_scale::FS_11)
+                                        .text_color(c.text_disabled)
+                                        .child(format!("phase {}", capability.arrives_in())),
+                                )
+                        }),
+                    ),
+                ),
+            )
             .child(
                 Section::titled("Run an analysis", theme).child(
                     div()

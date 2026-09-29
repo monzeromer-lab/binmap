@@ -101,6 +101,41 @@ impl Capabilities {
     pub fn require(&self, capability: Capability) -> crate::Result<()> {
         if self.has(capability) { Ok(()) } else { Err(crate::Error::Unsupported(capability)) }
     }
+
+    /// Why an action is unavailable for this target, in a sentence.
+    ///
+    /// §2.5 draws a line the interface must hold: a *view* a target cannot
+    /// support is **absent** from the nav rail, because its absence is a
+    /// property of the target and listing it would promise something that
+    /// cannot happen. A blocked **action** is different — the user asked for
+    /// it, so it states its reason rather than disappearing, which is the
+    /// failure mode where a button vanishes and nobody can say why.
+    ///
+    /// `None` means the action is available.
+    pub fn why_not(&self, capability: Capability) -> Option<String> {
+        if self.has(capability) {
+            return None;
+        }
+        Some(format!("This target cannot {capability}."))
+    }
+}
+
+impl Capability {
+    /// Which phase of the plan builds this.
+    ///
+    /// Shown beside an absent capability so "not yet" reads differently from
+    /// "never". A user who can see that crash analysis arrives in Phase 2
+    /// stops looking for the setting that turns it on.
+    pub fn arrives_in(self) -> &'static str {
+        match self {
+            Capability::ConfigurationSweep => "0",
+            Capability::SizeAttribution | Capability::Monomorphization => "1",
+            Capability::CompressedSize | Capability::LoadTime => "1.5",
+            Capability::SourceMapping | Capability::CrashAnalysis | Capability::Disassembly => "2",
+            Capability::PerformanceAttribution => "3",
+            Capability::ReplayDebugging => "4",
+        }
+    }
 }
 
 impl FromIterator<Capability> for Capabilities {
@@ -128,6 +163,30 @@ mod tests {
         );
 
         assert_eq!(Capabilities::none().sentence(), "Nothing Binmap can measure yet.");
+    }
+
+    #[test]
+    fn a_blocked_action_says_why_rather_than_disappearing() {
+        // §2.5 draws the line: an absent view is a property of the target, but
+        // an action the user asked for owes them a reason.
+        let capabilities: Capabilities = [Capability::ConfigurationSweep].into_iter().collect();
+        assert_eq!(capabilities.why_not(Capability::ConfigurationSweep), None);
+
+        let blocked = capabilities
+            .why_not(Capability::ReplayDebugging)
+            .expect("an unsupported action explains itself");
+        assert!(blocked.contains("record and replay execution"), "{blocked}");
+        assert!(blocked.ends_with('.'), "it is a sentence: {blocked}");
+    }
+
+    #[test]
+    fn an_absent_capability_says_whether_it_is_not_yet_or_never() {
+        // A user who can see that crash analysis arrives in Phase 2 stops
+        // looking for the setting that turns it on.
+        assert_eq!(Capability::ConfigurationSweep.arrives_in(), "0");
+        assert_eq!(Capability::SizeAttribution.arrives_in(), "1");
+        assert_eq!(Capability::CrashAnalysis.arrives_in(), "2");
+        assert_eq!(Capability::ReplayDebugging.arrives_in(), "4");
     }
 
     #[test]

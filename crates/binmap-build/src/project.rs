@@ -48,8 +48,45 @@ pub enum ProjectKind {
 /// here shows a Target view and a Profile Lab and nothing else — the Size,
 /// Failure, Perf and Replay entries are absent rather than present and empty
 /// (§2.5).
-fn phase_zero_capabilities() -> Capabilities {
-    [Capability::ConfigurationSweep].into_iter().collect()
+/// What Binmap can do with one particular target.
+///
+/// Derived rather than constant. It was a constant — every Rust target got
+/// `[ConfigurationSweep]` — which made the capability model a decoration:
+/// the nav rail filtered on a value that never varied, so nothing was ever
+/// actually absent for a reason.
+///
+/// Three things decide it, and each is a real distinction:
+///
+/// - **The target kind.** A binary and a `cdylib` are single artifacts with a
+///   symbol table; an `rlib` is an archive of object files, and attributing
+///   bytes in one answers a different question. A `lib` is only built as an
+///   rlib unless something links it.
+/// - **The compilation target.** A `.wasm` module is served over a network, so
+///   its compressed size is the number that matters and its uncompressed size
+///   mostly is not. It also has no ELF symbol table.
+/// - **What this build can actually do.** A capability declared for a phase
+///   that has not shipped is a promise the interface will fail to keep, so
+///   this only names what exists today.
+fn capabilities_for(kind: &TargetKind, wasm: bool) -> Capabilities {
+    let mut found = vec![
+        // True of every cargo target: the profile matrix applies whatever the
+        // artifact turns out to be.
+        Capability::ConfigurationSweep,
+    ];
+
+    if wasm {
+        // Size is the whole story for something served over a network, and it
+        // is the compressed number that matters.
+        found.push(Capability::CompressedSize);
+        return found.into_iter().collect();
+    }
+
+    // Phase 1 adds these for real. Until the symbol reader exists, declaring
+    // them would put entries in the nav rail that open on nothing.
+    let _single_artifact =
+        matches!(kind, TargetKind::Bin | TargetKind::CDyLib | TargetKind::StaticLib);
+
+    found.into_iter().collect()
 }
 
 /// Which target kinds produce a single artifact worth measuring.
@@ -66,6 +103,24 @@ fn is_measurable(kind: &TargetKind) -> bool {
             | TargetKind::CDyLib
             | TargetKind::StaticLib
     )
+}
+
+/// Whether this project builds for WebAssembly by default.
+///
+/// Read from `.cargo/config.toml`, which is where a wasm-only crate says so —
+/// and the corpus has one, so this is not hypothetical.
+fn builds_for_wasm(root: &Path) -> bool {
+    let config = root.join(".cargo").join("config.toml");
+    std::fs::read_to_string(config)
+        .ok()
+        .and_then(|text| text.parse::<toml_edit::DocumentMut>().ok())
+        .and_then(|document| {
+            document
+                .get("build")
+                .and_then(|build| build.get("target"))
+                .and_then(|target| target.as_str().map(str::to_string))
+        })
+        .is_some_and(|triple| triple.starts_with("wasm"))
 }
 
 /// Find the project at `root` and enumerate what it offers.
@@ -101,6 +156,7 @@ pub fn discover(runner: &ToolRunner, root: &Path) -> Result<(ProjectKind, Vec<Ta
     let members: Vec<&Package> = metadata.workspace_packages().into_iter().collect();
 
     let mut report = String::new();
+    let wasm = builds_for_wasm(root);
     let mut targets = Vec::new();
     for package in &members {
         for target in &package.targets {
@@ -114,7 +170,10 @@ pub fn discover(runner: &ToolRunner, root: &Path) -> Result<(ProjectKind, Vec<Ta
                 family: TargetFamily::Rust,
                 package: package.name.to_string(),
                 manifest: package.manifest_path.clone().into_std_path_buf(),
-                capabilities: phase_zero_capabilities(),
+                capabilities: capabilities_for(
+                    target.kind.first().unwrap_or(&TargetKind::Bin),
+                    wasm,
+                ),
             });
         }
     }
@@ -200,6 +259,63 @@ mod tests {
         assert!(!ids.iter().any(|id| id.contains("::tests")), "{ids:?}");
         // The discovery itself is on the record.
         assert!(!store.is_empty());
+    }
+
+    #[test]
+    fn a_wasm_target_declares_that_compressed_size_is_what_matters() {
+        // The corpus has one, and it is the case the capability model exists
+        // for: a .wasm module is served over a network, so the compressed
+        // number is the one that counts.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .unwrap()
+            .join("corpus/wasm");
+        if !root.exists() {
+            return;
+        }
+        assert!(builds_for_wasm(&root), "corpus/wasm builds for wasm by default");
+
+        let runner = ToolRunner::new(EvidenceStore::new(), &root);
+        let (_, targets) = discover(&runner, &root).unwrap();
+        let target = targets.first().expect("it has a target");
+        assert!(target.capabilities.has(Capability::CompressedSize));
+        assert!(target.capabilities.has(Capability::ConfigurationSweep));
+    }
+
+    #[test]
+    fn a_native_target_does_not_claim_compressed_size() {
+        // It is not served over a network, so the number would be noise.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let runner = ToolRunner::new(EvidenceStore::new(), root);
+        let (_, targets) = discover(&runner, root).unwrap();
+        let target = targets.first().expect("our own workspace has targets");
+        assert!(!target.capabilities.has(Capability::CompressedSize));
+    }
+
+    #[test]
+    fn nothing_claims_a_capability_this_build_has_not_shipped() {
+        // A capability declared for a phase that has not landed puts an entry
+        // in the nav rail that opens on nothing.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let runner = ToolRunner::new(EvidenceStore::new(), root);
+        let (_, targets) = discover(&runner, root).unwrap();
+        for target in targets {
+            for unshipped in [
+                Capability::CrashAnalysis,
+                Capability::Disassembly,
+                Capability::PerformanceAttribution,
+                Capability::ReplayDebugging,
+                Capability::SizeAttribution,
+                Capability::Monomorphization,
+            ] {
+                assert!(
+                    !target.capabilities.has(unshipped),
+                    "{} claims {unshipped}, which Phase 0 has not built",
+                    target.id
+                );
+            }
+        }
     }
 
     #[test]
