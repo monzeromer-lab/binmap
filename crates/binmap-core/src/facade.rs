@@ -271,6 +271,15 @@ pub trait Engine: Send + Sync {
     /// artifact cannot inject a claim.
     fn restore_session(&self, target: &str) -> usize;
 
+    /// Write this session out for someone else to read (`U13`).
+    ///
+    /// Returns where it went and what the redaction pass changed. The file
+    /// goes beside our own build products rather than into the user's tree:
+    /// an export is a new file they asked for, but "Binmap writes nothing to
+    /// your working tree" is a promise worth keeping literally, and the path
+    /// is reported so it can be attached to a bug report.
+    fn export_session(&self, target: &str) -> crate::Result<(std::path::PathBuf, String)>;
+
     /// Every sweep this session has run or restored.
     ///
     /// The Profile Lab's whole source. The engine held the measurements and

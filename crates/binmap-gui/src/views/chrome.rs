@@ -131,6 +131,21 @@ impl RenderOnce for TitleBar {
                     .text_color(c.text_muted)
                     .child(if self.theme.is_dark() { "☾" } else { "☀" }),
             )
+            // U13, where the design puts it.
+            .child(
+                clickable(div().id("export"), &self.dispatch, Action::ExportSession)
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .w(space::CONTROL_H_SM)
+                    .h(space::CONTROL_H_SM)
+                    .rounded(radius::CONTROL)
+                    .hover(|d| d.bg(c.surface_hover))
+                    .text_size(type_scale::FS_11)
+                    .text_color(c.text_muted)
+                    .child("⇩"),
+            )
             .child(
                 clickable(div().id("palette"), &self.dispatch, Action::TogglePalette)
                     .flex()

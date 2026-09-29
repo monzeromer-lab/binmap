@@ -411,6 +411,16 @@ pub enum Action {
     /// `U12`.
     TogglePalette,
     ClosePalette,
+    /// Type into the palette's query.
+    PaletteInput(String),
+    /// Remove the last character typed.
+    PaletteBackspace,
+    /// Move the highlight, wrapping at both ends.
+    PaletteMove(i32),
+    /// Run whatever is highlighted.
+    PaletteConfirm,
+    /// `U13`: write the session out for someone else to read, redacted.
+    ExportSession,
     /// `U9`: raising the tier is always a deliberate act, so this opens the
     /// dialog rather than changing anything.
     OpenTierDialog,
@@ -505,6 +515,12 @@ impl AppState {
             });
         }
 
+        commands.push(Command {
+            label: "Export session with a redaction pass".into(),
+            group: "Session",
+            shortcut: Some("⌘⇧E"),
+            action: Action::ExportSession,
+        });
         commands.push(Command {
             label: "Change the trust tier".into(),
             group: "Session",

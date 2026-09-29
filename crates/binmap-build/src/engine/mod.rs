@@ -477,6 +477,19 @@ impl Engine for BinmapEngine {
         finding.evidence().iter().filter_map(|id| self.inner.runner.store().get(id)).collect()
     }
 
+    fn export_session(&self, target: &str) -> Result<(std::path::PathBuf, String)> {
+        let target = self.target_by_id(target)?;
+
+        let directory = self.inner.config.read().expect("config poisoned").target_directory.clone();
+        let path = directory.join("sessions").join(format!(
+            "{}.export.binmap.json",
+            target.id.replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "_")
+        ));
+
+        let described = self.export(&target, &path)?;
+        Ok((path, described))
+    }
+
     fn restore_session(&self, target: &str) -> usize {
         // A session that cannot be read is worth saying so about, but it is
         // not worth refusing to open the project over.

@@ -35,6 +35,7 @@ pub struct ScriptedEngine {
     /// Recorded so a test can assert a run was actually requested.
     pub started: Mutex<Vec<Request>>,
     pub restores: Mutex<Vec<String>>,
+    pub exports: Mutex<Vec<String>>,
 }
 
 impl Default for ScriptedEngine {
@@ -55,6 +56,7 @@ impl ScriptedEngine {
             script: Mutex::new(Vec::new()),
             started: Mutex::new(Vec::new()),
             restores: Mutex::new(Vec::new()),
+            exports: Mutex::new(Vec::new()),
         }
     }
 
@@ -195,6 +197,14 @@ impl Engine for ScriptedEngine {
 
     fn proposals(&self) -> Vec<Proposal> {
         Vec::new()
+    }
+
+    fn export_session(&self, target: &str) -> binmap_core::Result<(std::path::PathBuf, String)> {
+        self.exports.lock().expect("poisoned").push(target.to_string());
+        Ok((
+            std::path::PathBuf::from(format!("/scripted/{target}.export.binmap.json")),
+            "Redacted: 3 × home directory paths.".to_string(),
+        ))
     }
 
     fn restore_session(&self, target: &str) -> usize {

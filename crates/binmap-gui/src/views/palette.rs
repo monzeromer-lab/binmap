@@ -34,11 +34,18 @@ pub struct Palette {
     query: String,
     theme: Theme,
     dispatch: Dispatch,
+    /// Which row the keyboard is on, as an index into `commands`.
+    highlighted: usize,
 }
 
 impl Palette {
     pub fn new(commands: Vec<Command>, query: String, theme: Theme, dispatch: &Dispatch) -> Self {
-        Self { commands, query, theme, dispatch: std::rc::Rc::clone(dispatch) }
+        Self { commands, query, theme, dispatch: std::rc::Rc::clone(dispatch), highlighted: 0 }
+    }
+
+    pub fn highlighting(mut self, index: usize) -> Self {
+        self.highlighted = index;
+        self
     }
 }
 
@@ -49,14 +56,18 @@ impl RenderOnce for Palette {
         let dispatch = self.dispatch;
         let rows = std::rc::Rc::clone(&dispatch);
 
-        // Group headings, in the order the commands arrive.
-        let mut groups: Vec<(&'static str, Vec<Command>)> = Vec::new();
-        for command in self.commands {
+        // Group headings, in the order the commands arrive. The flat index
+        // travels with each entry, because that is what the keyboard counts
+        // and grouping would otherwise lose it.
+        let highlighted = self.highlighted;
+        let mut groups: Vec<(&'static str, Vec<(usize, Command)>)> = Vec::new();
+        for (index, command) in self.commands.into_iter().enumerate() {
             match groups.iter_mut().find(|(name, _)| *name == command.group) {
-                Some((_, entries)) => entries.push(command),
-                None => groups.push((command.group, vec![command])),
+                Some((_, entries)) => entries.push((index, command)),
+                None => groups.push((command.group, vec![(index, command)])),
             }
         }
+        let empty = groups.is_empty();
 
         scrim(&dispatch, Action::ClosePalette).child(
             div()
@@ -102,7 +113,7 @@ impl RenderOnce for Palette {
                                 .font_family("JetBrains Mono")
                                 .text_size(type_scale::FS_11)
                                 .text_color(c.text_disabled)
-                                .child("Esc"),
+                                .child("↑↓ ⏎ Esc"),
                         ),
                 )
                 .child(
@@ -113,6 +124,16 @@ impl RenderOnce for Palette {
                         .min_h_0()
                         .overflow_hidden()
                         .py(space::S4)
+                        .when(empty, |d| {
+                            d.child(
+                                div()
+                                    .px(space::S16)
+                                    .py(space::S12)
+                                    .text_size(type_scale::FS_12)
+                                    .text_color(c.text_muted)
+                                    .child("Nothing matches."),
+                            )
+                        })
                         .children(groups.into_iter().map(move |(name, entries)| {
                             let rows = std::rc::Rc::clone(&rows);
                             div()
@@ -121,7 +142,8 @@ impl RenderOnce for Palette {
                                 .child(
                                     div().px(space::S16).py(space::S4).child(eyebrow(name, theme)),
                                 )
-                                .children(entries.into_iter().map(move |command| {
+                                .children(entries.into_iter().map(move |(index, command)| {
+                                    let on_it = index == highlighted;
                                     clickable(
                                         div().id(SharedString::from(format!(
                                             "cmd-{}",
@@ -136,6 +158,9 @@ impl RenderOnce for Palette {
                                     .gap(space::S8)
                                     .h(space::ROW_H_LG)
                                     .px(space::S16)
+                                    .when(on_it, |d| {
+                                        d.bg(c.surface_selected).border_l_2().border_color(c.accent)
+                                    })
                                     .hover(|d| d.bg(c.surface_hover))
                                     .child(
                                         div()

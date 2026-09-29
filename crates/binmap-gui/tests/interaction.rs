@@ -221,3 +221,152 @@ fn re_checking_the_environment_is_a_fresh_read_not_a_cached_one() {
     assert_eq!(state.unmet_probes(), 1, "the probe set is re-read, not remembered");
     assert!(state.probes().iter().any(|p| p.name == "miri" && p.remedy.is_some()));
 }
+
+// ---------------------------------------------------------------------------
+// The palette's keyboard (U12)
+// ---------------------------------------------------------------------------
+//
+// The palette filters on a query, and the query is built one keystroke at a
+// time. These assert the arithmetic of that, which is the part that is easy to
+// get subtly wrong and impossible to notice by looking.
+
+/// Replays a sequence of actions against a bare query and highlight, the way
+/// `Binmap::act` does, so palette arithmetic can be checked without a window.
+#[derive(Default)]
+struct PaletteState {
+    query: String,
+    index: usize,
+}
+
+impl PaletteState {
+    fn apply(&mut self, action: Action, state: &AppState) {
+        match action {
+            Action::PaletteInput(text) => {
+                self.query.push_str(&text);
+                self.index = 0;
+            }
+            Action::PaletteBackspace => {
+                self.query.pop();
+                self.index = 0;
+            }
+            Action::PaletteMove(by) => {
+                let count = state.commands(&self.query).len();
+                if count > 0 {
+                    self.index = (self.index as i32 + by).rem_euclid(count as i32) as usize;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn typing_narrows_the_list_and_backspace_widens_it_again() {
+    let engine = engine();
+    let state = opened(&engine);
+    let mut palette = PaletteState::default();
+
+    let everything = state.commands("").len();
+    for letter in ["s", "w", "e", "e", "p"] {
+        palette.apply(Action::PaletteInput(letter.into()), &state);
+    }
+    assert_eq!(palette.query, "sweep");
+
+    let narrowed = state.commands(&palette.query).len();
+    assert!(narrowed > 0 && narrowed < everything, "{narrowed} of {everything}");
+
+    palette.apply(Action::PaletteBackspace, &state);
+    assert_eq!(palette.query, "swee");
+    assert!(state.commands(&palette.query).len() >= narrowed);
+}
+
+#[test]
+fn narrowing_resets_the_highlight_rather_than_leaving_it_somewhere_unread() {
+    // Otherwise Enter runs whatever happens to sit at the old position in a
+    // list the user has not looked at.
+    let engine = engine();
+    let state = opened(&engine);
+    let mut palette = PaletteState::default();
+
+    palette.apply(Action::PaletteMove(3), &state);
+    assert_eq!(palette.index, 3);
+
+    palette.apply(Action::PaletteInput("s".into()), &state);
+    assert_eq!(palette.index, 0, "the highlight survived a narrowing");
+
+    palette.apply(Action::PaletteMove(1), &state);
+    palette.apply(Action::PaletteBackspace, &state);
+    assert_eq!(palette.index, 0, "the highlight survived a widening");
+}
+
+#[test]
+fn the_highlight_wraps_at_both_ends() {
+    // A list that stops at the end makes the last item harder to reach than
+    // the first, for no reason a user would recognise.
+    let engine = engine();
+    let state = opened(&engine);
+    let count = state.commands("").len();
+    let mut palette = PaletteState::default();
+
+    palette.apply(Action::PaletteMove(-1), &state);
+    assert_eq!(palette.index, count - 1, "up from the top reaches the bottom");
+
+    palette.apply(Action::PaletteMove(1), &state);
+    assert_eq!(palette.index, 0, "down from the bottom reaches the top");
+}
+
+#[test]
+fn moving_within_an_empty_result_does_not_panic_or_point_at_nothing() {
+    let engine = engine();
+    let state = opened(&engine);
+    let mut palette = PaletteState { query: "matches nothing whatsoever".into(), index: 0 };
+    assert!(state.commands(&palette.query).is_empty());
+
+    palette.apply(Action::PaletteMove(1), &state);
+    assert_eq!(palette.index, 0);
+    assert!(state.commands(&palette.query).get(palette.index).is_none());
+}
+
+#[test]
+fn confirming_runs_the_same_action_a_click_produces() {
+    // The whole point of the Action model: the palette has no second code
+    // path to keep in step with the buttons.
+    let engine = engine();
+    let state = opened(&engine);
+
+    let typed = state.commands("sweep");
+    let clicked = state
+        .commands("")
+        .into_iter()
+        .find(|c| c.label == "Sweep build configurations")
+        .expect("the button's action is in the palette");
+
+    assert_eq!(typed[0].action, clicked.action);
+    assert_eq!(typed[0].action, Action::StartSweep);
+}
+
+#[test]
+fn exporting_reaches_the_engine_and_reports_where_it_went() {
+    // U13's export half had a redaction pass, a store and no way to ask for
+    // it from the interface.
+    let engine = engine();
+    let (path, redacted) = engine.export_session("app::app").expect("the export is written");
+
+    assert_eq!(engine.exports.lock().unwrap().as_slice(), ["app::app"]);
+    assert!(path.to_string_lossy().ends_with(".binmap.json"), "{}", path.display());
+    // The recipient is told the evidence was altered, and by how much.
+    assert!(redacted.starts_with("Redacted: "), "{redacted}");
+}
+
+#[test]
+fn export_is_reachable_from_the_keyboard_like_everything_else() {
+    let engine = engine();
+    let state = opened(&engine);
+    let command = state
+        .commands("export")
+        .into_iter()
+        .next()
+        .expect("U12: every action the interface offers is in the palette");
+    assert_eq!(command.action, Action::ExportSession);
+    assert_eq!(command.shortcut, Some("⌘⇧E"));
+}

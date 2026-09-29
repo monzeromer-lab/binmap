@@ -45,6 +45,8 @@ impl EventSink for ChannelSink {
 gpui_kit::actions!(
     binmap,
     [
+        /// Write the session out, redacted.
+        Export,
         /// Open or close the command palette.
         TogglePalette,
         /// Dismiss whatever is open; if nothing is, cancel the run.
@@ -66,6 +68,8 @@ pub fn bind_keys(cx: &mut App) {
         gpui_kit::KeyBinding::new("ctrl-shift-t", Sweep, None),
         gpui_kit::KeyBinding::new("cmd-shift-l", ToggleTheme, None),
         gpui_kit::KeyBinding::new("ctrl-shift-l", ToggleTheme, None),
+        gpui_kit::KeyBinding::new("cmd-shift-e", Export, None),
+        gpui_kit::KeyBinding::new("ctrl-shift-e", Export, None),
     ]);
 }
 
@@ -82,9 +86,10 @@ pub struct Binmap {
     /// The run in flight, so it can be cancelled. A sweep the user cannot stop
     /// is a hostile tool.
     active: Option<(RunId, Cancellation)>,
-    /// `U12`: open, and what has been typed into it.
+    /// `U12`: open, what has been typed into it, and which row is highlighted.
     palette: bool,
     query: String,
+    palette_index: usize,
     /// `U9`: the tier dialog, which is how a tier is raised.
     tier_dialog: bool,
     /// Which row of the Profile Lab is open. `None` selects the frontier's
@@ -171,6 +176,7 @@ impl Binmap {
             restored,
             palette: false,
             query: String::new(),
+            palette_index: 0,
             tier_dialog: false,
             focus: cx.focus_handle(),
         }
@@ -282,8 +288,58 @@ impl Binmap {
             Action::TogglePalette => {
                 self.palette = !self.palette;
                 self.query.clear();
+                self.palette_index = 0;
             }
             Action::ClosePalette => self.palette = false,
+            Action::PaletteInput(text) => {
+                self.query.push_str(&text);
+                // A narrowed list invalidates the old position, and leaving
+                // the highlight where it was selects something the user never
+                // looked at.
+                self.palette_index = 0;
+            }
+            Action::PaletteBackspace => {
+                self.query.pop();
+                self.palette_index = 0;
+            }
+            Action::PaletteMove(by) => {
+                let count = self.state.commands(&self.query).len();
+                if count > 0 {
+                    // Wrapping, because a list that stops at the end makes the
+                    // last item harder to reach than the first.
+                    let position = self.palette_index as i32 + by;
+                    self.palette_index = position.rem_euclid(count as i32) as usize;
+                }
+            }
+            Action::PaletteConfirm => {
+                let commands = self.state.commands(&self.query);
+                let Some(command) = commands.get(self.palette_index).cloned() else {
+                    return;
+                };
+                self.palette = false;
+                // The palette runs the same action a click produces. There is
+                // no second code path to keep in step.
+                return self.act(command.action, cx);
+            }
+            Action::ExportSession => {
+                let Some(target) = self.state.selected_target().map(|t| t.id.clone()) else {
+                    return;
+                };
+                // Reported through the run log, so the path and what was
+                // redacted land where every other outcome does rather than in
+                // a toast that scrolls away.
+                let run = RunId("export".into());
+                match self.engine.export_session(&target) {
+                    Ok((path, redacted)) => self.state.apply(EngineEvent::Finished {
+                        run,
+                        summary: format!("Exported to {} — {redacted}", path.display()),
+                    }),
+                    Err(error) => self.state.apply(EngineEvent::Failed {
+                        run,
+                        error: format!("the session could not be exported: {error}"),
+                    }),
+                }
+            }
             Action::OpenTierDialog => self.tier_dialog = true,
             Action::SetTier(tier) => {
                 // U9: raising a tier is always deliberate, and it is the
@@ -340,12 +396,45 @@ impl Render for Binmap {
                 cx.listener(|this, _: &TogglePalette, _, cx| this.act(Action::TogglePalette, cx)),
             )
             .on_action(cx.listener(|this, _: &Sweep, _, cx| this.act(Action::StartSweep, cx)))
+            .on_action(cx.listener(|this, _: &Export, _, cx| this.act(Action::ExportSession, cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleTheme, _, cx| this.act(Action::ToggleTheme, cx)),
             )
             // Escape dismisses what is open; with nothing open it cancels the
             // run, because that is what Escape means to someone watching a
             // sweep they want to stop.
+            // The palette's keyboard. GPUI routes named actions, but a
+            // palette needs the characters themselves, so it reads key events
+            // directly — and only while it is open, so nothing else in the
+            // frame loses its keys to it.
+            .on_key_down(cx.listener(|this: &mut Binmap, event: &gpui_kit::KeyDownEvent, _, cx| {
+                if !this.palette {
+                    return;
+                }
+                let keystroke = &event.keystroke;
+                let action = match keystroke.key.as_str() {
+                    "backspace" => Some(Action::PaletteBackspace),
+                    "down" => Some(Action::PaletteMove(1)),
+                    "up" => Some(Action::PaletteMove(-1)),
+                    "enter" => Some(Action::PaletteConfirm),
+                    _ => keystroke
+                        .key_char
+                        .as_ref()
+                        // A modifier chord is a command, not text. Without
+                        // this, ⌘K would type "k" into the box it just opened.
+                        .filter(|_| {
+                            !keystroke.modifiers.control
+                                && !keystroke.modifiers.platform
+                                && !keystroke.modifiers.alt
+                        })
+                        .filter(|text| !text.chars().any(char::is_control))
+                        .map(|text| Action::PaletteInput(text.clone())),
+                };
+                if let Some(action) = action {
+                    cx.stop_propagation();
+                    this.act(action, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &Dismiss, _, cx| {
                 let action = if this.palette || this.tier_dialog {
                     Action::CloseDialogs
@@ -407,12 +496,15 @@ impl Render for Binmap {
             .child(StatusBar::of(&self.state, theme).dispatching(&dispatch))
             // U12, and U9's dialog. Overlays last so they sit above the frame.
             .when(self.palette, |d| {
-                d.child(crate::views::palette::Palette::new(
-                    self.state.commands(&self.query),
-                    self.query.clone(),
-                    theme,
-                    &dispatch,
-                ))
+                d.child(
+                    crate::views::palette::Palette::new(
+                        self.state.commands(&self.query),
+                        self.query.clone(),
+                        theme,
+                        &dispatch,
+                    )
+                    .highlighting(self.palette_index),
+                )
             })
             .when(self.tier_dialog, |d| {
                 d.child(crate::views::palette::TierDialog::new(
