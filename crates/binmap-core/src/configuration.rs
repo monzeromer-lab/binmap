@@ -233,6 +233,33 @@ impl BuildConfiguration {
         rows
     }
 
+    /// Rebuild a configuration from the `(axis, value)` pairs [`settings`]
+    /// produced.
+    ///
+    /// The round trip exists so the interface can describe and apply exactly
+    /// what the sweep measured, without the measurement carrying a second
+    /// copy of the configuration. An axis whose value we do not recognise is
+    /// left unset rather than guessed at.
+    ///
+    /// [`settings`]: BuildConfiguration::settings
+    pub fn apply_settings<K: AsRef<str>, V: AsRef<str>>(&mut self, settings: &[(K, V)]) {
+        for (axis, value) in settings {
+            let value = value.as_ref();
+            match axis.as_ref() {
+                "opt-level" => self.opt_level = OptLevel::from_display(value),
+                "lto" => self.lto = Lto::from_display(value),
+                "codegen-units" => self.codegen_units = value.parse().ok(),
+                "panic" => self.panic = PanicStrategy::from_display(value),
+                "strip" => self.strip = Strip::from_display(value),
+                "debug" => self.debug = DebugInfo::from_display(value),
+                "overflow-checks" => self.overflow_checks = value.parse().ok(),
+                "build-std" => self.build_std = BuildStd::from_display(value),
+                "target-cpu" => self.target_cpu = Some(value.to_string()),
+                _ => {}
+            }
+        }
+    }
+
     /// A short, stable, filesystem-safe name.
     ///
     /// This one string is the per-configuration target subdirectory, the key a

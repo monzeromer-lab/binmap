@@ -92,6 +92,8 @@ pub struct Binmap {
     palette_index: usize,
     /// `U9`: the tier dialog, which is how a tier is raised.
     tier_dialog: bool,
+    /// `U0.2`: the configuration the apply dialog is offering to write.
+    apply_dialog: Option<String>,
     /// Which row of the Profile Lab is open. `None` selects the frontier's
     /// first point, so the panel is never empty when there is something to
     /// show.
@@ -188,6 +190,7 @@ impl Binmap {
             query: String::new(),
             palette_index: 0,
             tier_dialog: false,
+            apply_dialog: None,
             focus: cx.focus_handle(),
         }
     }
@@ -359,6 +362,29 @@ impl Binmap {
             // Every step is skippable. A first-run flow that gates the product
             // on answering it is a tool people close.
             Action::FlowSkip => self.stage = Stage::Ready,
+            Action::OpenApplyDialog(id) => self.apply_dialog = Some(id),
+            Action::ApplyConfiguration(id) => {
+                self.apply_dialog = None;
+                let run = RunId(format!("apply-{id}"));
+                // Make the proposal, then ask for it to be written. The engine
+                // refuses below Tune, and refuses a configuration its gates
+                // rejected — the interface does not decide either.
+                let outcome = self
+                    .sweep_configuration(&id)
+                    .ok_or_else(|| {
+                        binmap_core::Error::Other(format!(
+                            "`{id}` was not measured in this session"
+                        ))
+                    })
+                    .and_then(|configuration| self.engine.propose_configuration(&configuration))
+                    .and_then(|proposal| {
+                        let sink: Arc<dyn EventSink> = Arc::new(ChannelSink(self.sender.clone()));
+                        self.engine.start(Request::Apply { proposal: proposal.id }, sink)
+                    });
+                if let Err(error) = outcome {
+                    self.state.apply(EngineEvent::Failed { run, error: error.to_string() });
+                }
+            }
             Action::OpenTierDialog => self.tier_dialog = true,
             Action::SetTier(tier) => {
                 // U9: raising a tier is always deliberate, and it is the
@@ -368,10 +394,25 @@ impl Binmap {
             }
             Action::CloseDialogs => {
                 self.tier_dialog = false;
+                self.apply_dialog = None;
                 self.palette = false;
             }
         }
         cx.notify();
+    }
+
+    /// The configuration one of this session's measured rows was built under.
+    fn sweep_configuration(
+        &self,
+        id: &str,
+    ) -> Option<binmap_core::configuration::BuildConfiguration> {
+        let measurement =
+            self.engine.sweeps().into_iter().flat_map(|s| s.measured).find(|m| m.id == id)?;
+        // Rebuilt from the axes the measurement recorded, so the dialog and
+        // the write describe the same thing the sweep measured.
+        let mut configuration = binmap_core::configuration::BuildConfiguration::default();
+        configuration.apply_settings(&measurement.settings);
+        Some(configuration)
     }
 
     /// The dispatcher every view is handed.
@@ -475,7 +516,7 @@ impl Render for Binmap {
                 }
             }))
             .on_action(cx.listener(|this, _: &Dismiss, _, cx| {
-                let action = if this.palette || this.tier_dialog {
+                let action = if this.palette || this.tier_dialog || this.apply_dialog.is_some() {
                     Action::CloseDialogs
                 } else {
                     Action::Cancel
@@ -544,6 +585,35 @@ impl Render for Binmap {
                     )
                     .highlighting(self.palette_index),
                 )
+            })
+            .when_some(self.apply_dialog.clone(), |d, id| {
+                let measurement =
+                    self.engine.sweeps().into_iter().flat_map(|s| s.measured).find(|m| m.id == id);
+                let Some(measurement) = measurement else { return d };
+                let gates = measurement
+                    .gates
+                    .outcomes
+                    .iter()
+                    .map(|outcome| {
+                        (
+                            outcome.qualified_label(),
+                            outcome.detail.clone(),
+                            outcome.result == binmap_core::gate::GateResult::Passed,
+                        )
+                    })
+                    .collect();
+                d.child(crate::views::palette::ApplyDialog::new(
+                    id,
+                    measurement.flags.clone(),
+                    self.root
+                        .as_ref()
+                        .map(|root| format!("{root}/Cargo.toml  ·  [profile.release]"))
+                        .unwrap_or_else(|| "Cargo.toml  ·  [profile.release]".into()),
+                    gates,
+                    self.engine_tier(),
+                    theme,
+                    &dispatch,
+                ))
             })
             .when(self.tier_dialog, |d| {
                 d.child(crate::views::palette::TierDialog::new(

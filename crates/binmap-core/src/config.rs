@@ -192,6 +192,21 @@ macro_rules! cargo_value {
             }
         }
 
+        impl $name {
+            /// The inverse of [`Display`](std::fmt::Display).
+            ///
+            /// Round-tripping a value through its displayed form is how the
+            /// interface reconstructs the configuration a measurement was
+            /// built under. A spelling we do not recognise yields `None`
+            /// rather than a default, because a silently wrong axis is worse
+            /// than an absent one.
+            pub fn from_display(value: &str) -> Option<Self> {
+                [$(Self::$variant),*]
+                    .into_iter()
+                    .find(|candidate| candidate.to_string() == value)
+            }
+        }
+
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str(self.as_toml().trim_matches('"'))
@@ -345,6 +360,35 @@ mod tests {
             target_cpu: Vec::new(),
         };
         assert_eq!(matrix.cardinality(), 1);
+    }
+
+    #[test]
+    fn a_configuration_survives_the_round_trip_through_its_own_settings() {
+        use crate::configuration::BuildConfiguration;
+        let original = BuildConfiguration {
+            opt_level: Some(OptLevel::Size),
+            lto: Some(Lto::Fat),
+            codegen_units: Some(1),
+            panic: Some(PanicStrategy::Abort),
+            strip: Some(Strip::Symbols),
+            debug: Some(DebugInfo::LineTablesOnly),
+            overflow_checks: Some(true),
+            build_std: None,
+            target_cpu: Some("x86-64-v3".into()),
+        };
+
+        let mut restored = BuildConfiguration::default();
+        restored.apply_settings(&original.settings());
+        assert_eq!(restored, original, "the interface would apply a different configuration");
+    }
+
+    #[test]
+    fn an_axis_value_we_do_not_recognise_is_left_unset_rather_than_defaulted() {
+        use crate::configuration::BuildConfiguration;
+        let mut configuration = BuildConfiguration::default();
+        configuration.apply_settings(&[("opt-level", "fast"), ("lto", "fat")]);
+        assert_eq!(configuration.opt_level, None, "a silently wrong axis is worse than none");
+        assert_eq!(configuration.lto, Some(Lto::Fat));
     }
 
     #[test]

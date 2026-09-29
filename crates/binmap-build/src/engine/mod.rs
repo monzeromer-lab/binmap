@@ -160,6 +160,105 @@ impl BinmapEngine {
         Ok(adopted)
     }
 
+    /// Write a proposal into the working tree.
+    ///
+    /// The one place in Phase 0 that touches a file the user owns, and it is
+    /// gated three ways:
+    ///
+    /// - The tier must be at least `Tune`. Below it the write is refused with
+    ///   the tier it would need, not silently skipped (`U9`).
+    /// - The proposal must be one we produced. Applying an id we never issued
+    ///   is the same class of mistake as citing evidence we never issued.
+    /// - The configuration it came from must have passed its gates. Writing a
+    ///   configuration whose tests failed is the exact thing the gates exist
+    ///   to prevent, however good its size looked.
+    ///
+    /// The write is recorded as evidence, so what was changed and when is on
+    /// the same record as everything else.
+    pub fn apply(&self, proposal_id: &str) -> Result<String> {
+        let tier = self.inner.config.read().expect("config poisoned").trust_tier;
+        tier.require(TrustTier::Tune, "write [profile.release] into Cargo.toml")?;
+
+        let proposal = self
+            .inner
+            .proposals
+            .lock()
+            .expect("proposals poisoned")
+            .iter()
+            .find(|p| p.id == proposal_id)
+            .cloned()
+            .ok_or_else(|| {
+                Error::Other(format!("`{proposal_id}` is not a proposal this session produced"))
+            })?;
+
+        // The configuration behind it must have passed. A proposal is only as
+        // good as the measurement it came from.
+        let name = proposal_id.strip_prefix("apply-").unwrap_or(proposal_id);
+        let rejected = self
+            .inner
+            .runs
+            .lock()
+            .expect("runs poisoned")
+            .values()
+            .flat_map(|state| state.measured.iter())
+            .find(|m| m.name == name)
+            .and_then(|m| m.report.rejected_by());
+        if let Some(gate) = rejected {
+            return Err(Error::Other(format!(
+                "`{name}` was rejected by {gate} and will not be written"
+            )));
+        }
+
+        let manifest = proposal
+            .writes
+            .first()
+            .ok_or_else(|| Error::Other(format!("`{proposal_id}` writes nothing")))?;
+
+        let before =
+            std::fs::read_to_string(manifest).map_err(|source| Error::io(manifest, source))?;
+        let configuration = self.configuration_named(name).ok_or_else(|| {
+            Error::Other(format!("the configuration behind `{proposal_id}` is no longer known"))
+        })?;
+        let after = manifest::with_release_profile(&before, &configuration);
+
+        // Recorded before the write, like every other tool invocation.
+        let pending = self.inner.runner.store().begin(binmap_core::evidence::ToolInvocation::new(
+            "binmap:apply",
+            [proposal_id.to_string(), manifest.display().to_string()],
+        ));
+        match std::fs::write(manifest, &after) {
+            Ok(()) => {
+                self.inner.runner.store().complete(
+                    pending,
+                    manifest::unified_diff(manifest, &before, &after),
+                    0,
+                );
+            }
+            Err(source) => {
+                self.inner.runner.store().complete(
+                    pending,
+                    format!("failed to write: {source}"),
+                    -1,
+                );
+                return Err(Error::io(manifest, source));
+            }
+        }
+
+        Ok(format!("Wrote {} into {}", configuration.describe(), manifest.display()))
+    }
+
+    /// The configuration one of this session's measurements was built under.
+    fn configuration_named(&self, name: &str) -> Option<BuildConfiguration> {
+        self.inner
+            .runs
+            .lock()
+            .expect("runs poisoned")
+            .values()
+            .flat_map(|state| state.measured.iter())
+            .find(|m| m.name == name)
+            .map(|m| m.configuration.clone())
+    }
+
     /// Write the session now. Exposed for tests; production persists at the
     /// end of every run.
     #[doc(hidden)]
@@ -441,11 +540,24 @@ impl Engine for BinmapEngine {
                 );
                 (run, target)
             }
-            Request::Verify { proposal } | Request::Apply { proposal } => {
+            // Applying is not a sweep: it is one write, it finishes in
+            // milliseconds, and the user is waiting for the answer. It runs
+            // here rather than being detached onto a thread.
+            Request::Apply { proposal } => {
+                let outcome = self.apply(&proposal);
+                let run = RunId(format!("apply-{proposal}"));
+                match outcome {
+                    Ok(summary) => events.emit(EngineEvent::Finished { run: run.clone(), summary }),
+                    Err(error) => events
+                        .emit(EngineEvent::Failed { run: run.clone(), error: error.to_string() }),
+                }
+                return Ok((run, cancellation));
+            }
+            Request::Verify { proposal } => {
                 return Err(Error::Other(format!(
-                    "`{proposal}` cannot be verified or applied yet: Phase 0 proposes \
-                     configurations and shows their diffs, and applying one arrives with the \
-                     apply dialog"
+                    "`{proposal}` cannot be verified on its own yet: a configuration is \
+                     verified by the sweep that measured it, and its gate rows are already \
+                     beside it"
                 )));
             }
         };

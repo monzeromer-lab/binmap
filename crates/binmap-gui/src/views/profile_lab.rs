@@ -187,6 +187,7 @@ impl RenderOnce for ProfileLab {
                             &sweep,
                             &measurement,
                             theme,
+                            &dispatch,
                         )))
                     }),
             )
@@ -602,8 +603,14 @@ fn selected_panel(
     sweep: &SweepSummary,
     measurement: &Measurement,
     theme: Theme,
+    dispatch: &Dispatch,
 ) -> impl IntoElement {
     let c = theme.colours;
+    // A configuration its gates rejected is not offered for writing. The
+    // engine refuses it too; this is so the button never looks available for
+    // something that cannot happen.
+    let applicable = measurement.passed() && measurement.built;
+    let id = measurement.id.clone();
 
     Section::titled("Selected configuration", theme)
         .child(
@@ -626,6 +633,39 @@ fn selected_panel(
                     ),
                 ),
             )
+        })
+        // U0.2's apply, gated by tier. The button opens a dialog; nothing
+        // here writes, and nothing here decides whether it may.
+        .child(if applicable {
+            clickable(div().id("apply"), dispatch, Action::OpenApplyDialog(id))
+                .flex()
+                .items_center()
+                .justify_center()
+                .mt(space::S4)
+                .h(space::CONTROL_H_MD)
+                .rounded(radius::CONTROL)
+                .border_1()
+                .border_color(c.border_accent)
+                .hover(|d| d.bg(c.surface_hover))
+                .text_size(type_scale::FS_12)
+                .text_color(c.text_accent)
+                .child("Apply to Cargo.toml…")
+                .into_any_element()
+        } else {
+            // A configuration its gates rejected is not offered. The engine
+            // refuses it as well; this is so the control never looks
+            // available for something that cannot happen.
+            div()
+                .mt(space::S4)
+                .text_size(type_scale::FS_11)
+                .text_color(c.text_muted)
+                .child(match measurement.rejected_by() {
+                    Some(gate) => {
+                        format!("Rejected by {gate}, so it is not offered for applying.")
+                    }
+                    None => "Not built, so there is nothing to apply.".to_string(),
+                })
+                .into_any_element()
         })
 }
 

@@ -71,14 +71,55 @@ fn resuming_a_sweep_that_never_ran_says_so_rather_than_starting_one() {
 }
 
 #[test]
-fn phase_zero_says_plainly_that_applying_is_not_built_yet() {
+fn an_apply_that_is_refused_reports_the_refusal_rather_than_failing_to_start() {
+    // A refused write is an answer, not an error starting a run. The run
+    // registers, reports why nothing was written, and ends — so the reason
+    // lands in the run log where every other outcome does.
+    let engine = engine();
+    let events = RecordedEvents::new();
+    let (run, _) = engine
+        .start(Request::Apply { proposal: "apply-invented".into() }, Arc::new(events.clone()))
+        .expect("the run registers");
+
+    let terminal: Vec<_> = events.events().into_iter().filter(|e| e.is_terminal()).collect();
+    assert_eq!(terminal.len(), 1, "one terminal event per run");
+    match &terminal[0] {
+        EngineEvent::Failed { run: failed, error } => {
+            assert_eq!(failed, &run);
+            // The tier is checked before anything else, so this is the tier's
+            // refusal — the cheapest and most fundamental of the three.
+            assert!(error.contains("Tune"), "{error}");
+            assert!(error.contains("Propose"), "{error}");
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+
+    // Above the tier, the unknown proposal is what refuses it.
+    engine.set_trust_tier(TrustTier::Tune);
+    let events = RecordedEvents::new();
+    engine
+        .start(Request::Apply { proposal: "apply-invented".into() }, Arc::new(events.clone()))
+        .expect("the run registers");
+    let error = events
+        .events()
+        .into_iter()
+        .find_map(|event| match event {
+            EngineEvent::Failed { error, .. } => Some(error),
+            _ => None,
+        })
+        .expect("a refusal");
+    assert!(error.contains("not a proposal this session produced"), "{error}");
+}
+
+#[test]
+fn verifying_a_proposal_on_its_own_says_where_its_gates_already_are() {
     let engine = engine();
     let error = engine
-        .start(Request::Apply { proposal: "apply-ols".into() }, Arc::new(RecordedEvents::new()))
+        .start(Request::Verify { proposal: "apply-ols".into() }, Arc::new(RecordedEvents::new()))
         .unwrap_err();
     let message = error.to_string();
     assert!(message.contains("apply-ols"), "{message}");
-    assert!(message.contains("apply dialog"), "{message}");
+    assert!(message.contains("beside it"), "{message}");
 }
 
 #[test]
@@ -191,4 +232,144 @@ fn an_exported_session_names_what_it_redacted() {
         described.starts_with("Redacted: ") || described == "Nothing needed redacting.",
         "{described}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Applying a configuration (U0.2, U9, A2.4)
+// ---------------------------------------------------------------------------
+//
+// The one place in Phase 0 that touches a file the user owns. Each gate on it
+// has a test, because a write that happens when it should not is the failure
+// this product cannot afford.
+
+/// A throwaway crate with a manifest we are allowed to rewrite.
+fn writable_project() -> (tempfile::TempDir, ProjectConfig) {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(
+        directory.path().join("Cargo.toml"),
+        "[package]\nname = \"subject\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n\
+         [dependencies]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(directory.path().join("src")).unwrap();
+    std::fs::write(directory.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    let mut config = ProjectConfig::new(directory.path());
+    config.target_directory = directory.path().join("target/binmap");
+    (directory, config)
+}
+
+fn engine_over(config: ProjectConfig) -> BinmapEngine {
+    BinmapEngine::open(config, GatePlan::new(ToolInvocation::new("sh", ["-c", "true"])))
+        .expect("the project opens")
+}
+
+/// Register a measured configuration and the proposal that would write it.
+fn proposal_for(engine: &BinmapEngine, passed: bool) -> String {
+    let configuration = BuildConfiguration {
+        opt_level: Some(binmap_core::config::OptLevel::Size),
+        lto: Some(binmap_core::config::Lto::Fat),
+        ..Default::default()
+    };
+    let name = configuration.name();
+
+    let mut state = SweepState::new(RunId("r".into()), "subject::subject", Vec::new());
+    state.measured.push(crate::sweep::MeasuredConfiguration {
+        configuration: configuration.clone(),
+        name: name.clone(),
+        built: true,
+        artifact: None,
+        size_bytes: Some(1000),
+        sections: None,
+        build_time_nanos: None,
+        runtime_nanos: None,
+        report: binmap_core::gate::VerificationReport {
+            candidate: name.clone(),
+            outcomes: vec![binmap_core::gate::GateOutcome::new(
+                binmap_core::gate::Gate::TestsPass,
+                if passed {
+                    binmap_core::gate::GateResult::Passed
+                } else {
+                    binmap_core::gate::GateResult::Failed
+                },
+                if passed { "the suite passes" } else { "failures:" },
+            )],
+        },
+        evidence: Vec::new(),
+    });
+    engine.adopt_run(state);
+
+    engine.propose_configuration(&configuration).expect("a proposal is made").id
+}
+
+#[test]
+fn applying_below_the_tune_tier_is_refused_and_names_the_tier_it_needs() {
+    let (_d, config) = writable_project();
+    let manifest = config.root.join("Cargo.toml");
+    let engine = engine_over(config);
+    let before = std::fs::read_to_string(&manifest).unwrap();
+
+    // Propose is the default, and it never applies.
+    let proposal = proposal_for(&engine, true);
+    let error = engine.apply(&proposal).unwrap_err().to_string();
+
+    assert!(error.contains("Tune"), "{error}");
+    assert!(error.contains("Propose"), "{error}");
+    assert_eq!(std::fs::read_to_string(&manifest).unwrap(), before, "the manifest was written");
+}
+
+#[test]
+fn applying_at_tune_writes_the_profile_and_records_the_diff() {
+    let (_d, config) = writable_project();
+    let manifest = config.root.join("Cargo.toml");
+    let engine = engine_over(config);
+    engine.set_trust_tier(TrustTier::Tune);
+
+    let proposal = proposal_for(&engine, true);
+    let summary = engine.apply(&proposal).expect("Tune may write build configuration");
+    assert!(summary.contains("opt-level=s"), "{summary}");
+
+    let after = std::fs::read_to_string(&manifest).unwrap();
+    assert!(after.contains("[profile.release]"), "{after}");
+    assert!(after.contains("opt-level = \"s\""), "{after}");
+    assert!(after.contains("lto = \"fat\""), "{after}");
+    // The package is still there — this is an edit, not a rewrite.
+    assert!(after.contains("name = \"subject\""), "{after}");
+
+    // And the write is on the record like every other tool invocation.
+    let written = engine
+        .evidence_store()
+        .records()
+        .into_iter()
+        .find(|record| record.invocation.tool == "binmap:apply")
+        .expect("the write was recorded");
+    assert!(written.output.contains("+opt-level"), "{}", written.output);
+    assert!(written.digest_matches());
+}
+
+#[test]
+fn a_configuration_its_gates_rejected_is_never_written() {
+    // However good its size looked. This is what the gates are for.
+    let (_d, config) = writable_project();
+    let manifest = config.root.join("Cargo.toml");
+    let engine = engine_over(config);
+    engine.set_trust_tier(TrustTier::Tune);
+
+    let proposal = proposal_for(&engine, false);
+    let before = std::fs::read_to_string(&manifest).unwrap();
+    let error = engine.apply(&proposal).unwrap_err().to_string();
+
+    assert!(error.contains("TestsPass"), "the failing gate is named: {error}");
+    assert_eq!(std::fs::read_to_string(&manifest).unwrap(), before);
+}
+
+#[test]
+fn a_proposal_we_never_issued_is_refused() {
+    // The same class of mistake as citing evidence we never issued.
+    let (_d, config) = writable_project();
+    let engine = engine_over(config);
+    engine.set_trust_tier(TrustTier::Autonomous);
+
+    let error = engine.apply("apply-invented").unwrap_err().to_string();
+    assert!(error.contains("not a proposal this session produced"), "{error}");
 }

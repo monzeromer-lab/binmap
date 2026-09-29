@@ -299,3 +299,208 @@ impl RenderOnce for TierDialog {
         )
     }
 }
+
+/// The apply dialog (`U0.2`, `U9`, `A2.4`).
+///
+/// Applying above the current tier asks for the raise, names the gates and
+/// states what it will write. All three matter: a dialog that only says "are
+/// you sure" is asking the user to guess.
+#[derive(IntoElement)]
+pub struct ApplyDialog {
+    configuration: String,
+    flags: String,
+    writes: String,
+    gates: Vec<(String, String, bool)>,
+    tier: TrustTier,
+    theme: Theme,
+    dispatch: Dispatch,
+}
+
+impl ApplyDialog {
+    pub fn new(
+        configuration: impl Into<String>,
+        flags: impl Into<String>,
+        writes: impl Into<String>,
+        gates: Vec<(String, String, bool)>,
+        tier: TrustTier,
+        theme: Theme,
+        dispatch: &Dispatch,
+    ) -> Self {
+        Self {
+            configuration: configuration.into(),
+            flags: flags.into(),
+            writes: writes.into(),
+            gates,
+            tier,
+            theme,
+            dispatch: std::rc::Rc::clone(dispatch),
+        }
+    }
+
+    /// Whether the session's tier permits the write.
+    fn permitted(&self) -> bool {
+        self.tier >= TrustTier::Tune
+    }
+}
+
+impl RenderOnce for ApplyDialog {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        let c = self.theme.colours;
+        let theme = self.theme;
+        let permitted = self.permitted();
+        let dispatch = self.dispatch;
+        let configuration = self.configuration.clone();
+
+        scrim(&dispatch, Action::CloseDialogs).child(
+            div()
+                .mt(px(120.))
+                .w(px(560.))
+                .flex()
+                .flex_col()
+                .rounded(radius::SHELL)
+                .bg(c.surface_overlay)
+                .border_1()
+                .border_color(c.border_default)
+                .overflow_hidden()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(space::S4)
+                        .p(space::S16)
+                        .border_b_1()
+                        .border_color(c.border_subtle)
+                        .child(div().text_size(type_scale::FS_16).text_color(c.text_primary).child(
+                            if permitted {
+                                "Apply configuration to Cargo.toml?"
+                            } else {
+                                "Raise the trust tier to apply?"
+                            },
+                        ))
+                        .child(
+                            div()
+                                .font_family("JetBrains Mono")
+                                .text_size(type_scale::FS_11)
+                                .text_color(c.text_accent)
+                                .child(self.flags.clone()),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(space::S8)
+                        .p(space::S16)
+                        // What it will write, exactly.
+                        .child(eyebrow("Writes", theme))
+                        .child(
+                            div()
+                                .font_family("JetBrains Mono")
+                                .text_size(type_scale::FS_11)
+                                .text_color(c.text_body)
+                                .child(self.writes.clone()),
+                        )
+                        // The gates it passed, named. A write is only as good
+                        // as the measurement behind it.
+                        .child(eyebrow("Gates it passed", theme))
+                        .children(self.gates.into_iter().map(move |(gate, detail, passed)| {
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap(space::S6)
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .w(px(10.))
+                                        .text_color(if passed {
+                                            c.status_pass
+                                        } else {
+                                            c.text_disabled
+                                        })
+                                        .child(if passed { "✓" } else { "–" }),
+                                )
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .font_family("JetBrains Mono")
+                                        .text_size(type_scale::FS_11)
+                                        .text_color(c.text_body)
+                                        .child(gate),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(type_scale::FS_11)
+                                        .text_color(c.text_muted)
+                                        .child(detail),
+                                )
+                        }))
+                        .when(!permitted, |d| {
+                            d.child(
+                                div()
+                                    .p(space::S8)
+                                    .rounded(radius::INPUT)
+                                    .bg(c.status_warn_bg)
+                                    .text_size(type_scale::FS_11)
+                                    .text_color(c.status_warn)
+                                    .child(format!(
+                                        "The session is at {}. Writing build configuration needs \
+                                         Tune, and the tier is never raised silently.",
+                                        self.tier.label()
+                                    )),
+                            )
+                        }),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(space::S8)
+                        .p(space::S12)
+                        .border_t_1()
+                        .border_color(c.border_subtle)
+                        .child(div().flex_1())
+                        .child(
+                            clickable(div().id("apply-cancel"), &dispatch, Action::CloseDialogs)
+                                .flex()
+                                .items_center()
+                                .h(space::CONTROL_H_MD)
+                                .px(space::S12)
+                                .rounded(radius::CONTROL)
+                                .hover(|d| d.bg(c.surface_hover))
+                                .text_size(type_scale::FS_12)
+                                .text_color(c.text_secondary)
+                                .child("Cancel"),
+                        )
+                        .child(
+                            clickable(
+                                div().id("apply-confirm"),
+                                &dispatch,
+                                if permitted {
+                                    Action::ApplyConfiguration(configuration)
+                                } else {
+                                    // The raise is its own decision, made in
+                                    // its own dialog.
+                                    Action::OpenTierDialog
+                                },
+                            )
+                            .flex()
+                            .items_center()
+                            .h(space::CONTROL_H_MD)
+                            .px(space::S16)
+                            .rounded(radius::CONTROL)
+                            .bg(c.accent)
+                            .hover(|d| d.bg(c.accent_hover))
+                            .text_size(type_scale::FS_12)
+                            .text_color(c.on_accent)
+                            .child(if permitted {
+                                "Write it"
+                            } else {
+                                "Change tier…"
+                            }),
+                        ),
+                ),
+        )
+    }
+}

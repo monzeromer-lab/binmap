@@ -421,6 +421,11 @@ pub enum Action {
     PaletteConfirm,
     /// `U13`: write the session out for someone else to read, redacted.
     ExportSession,
+    /// `U0.2`: offer to write a configuration into Cargo.toml. Opens the
+    /// dialog; it never writes on its own.
+    OpenApplyDialog(String),
+    /// Confirm the write the dialog is offering.
+    ApplyConfiguration(String),
     /// Move the first-run flow on, back, or straight to the application.
     FlowNext,
     FlowBack,
