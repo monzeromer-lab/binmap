@@ -82,12 +82,21 @@ impl BuildConfiguration {
     /// Values are unquoted here, unlike their TOML spellings — `lto=fat`, not
     /// `lto="fat"`.
     pub fn cargo_profile_env(&self) -> BTreeMap<String, String> {
+        self.cargo_profile_env_for("release")
+    }
+
+    /// The same, for a profile that is not `release`.
+    ///
+    /// `F0.1` asks for targets *and profiles* to be enumerated, and a project
+    /// whose shipping profile is a custom one — `dist` is the common name —
+    /// could not be swept at all while this was hardcoded. The variable is
+    /// `CARGO_PROFILE_<PROFILE>_<SETTING>`, uppercased with hyphens as
+    /// underscores, for whatever the profile is called.
+    pub fn cargo_profile_env_for(&self, profile: &str) -> BTreeMap<String, String> {
+        let prefix = format!("CARGO_PROFILE_{}", profile.replace('-', "_").to_uppercase());
         let mut env = BTreeMap::new();
         let mut set = |setting: &str, value: String| {
-            env.insert(
-                format!("CARGO_PROFILE_RELEASE_{}", setting.replace('-', "_").to_uppercase()),
-                value,
-            );
+            env.insert(format!("{prefix}_{}", setting.replace('-', "_").to_uppercase()), value);
         };
         if let Some(v) = self.opt_level {
             set("opt-level", v.to_string());
@@ -421,6 +430,24 @@ mod tests {
             "a build-std feature was passed as a crate: {args:?}"
         );
         assert!(configuration.needs_nightly());
+    }
+
+    #[test]
+    fn a_custom_profile_gets_its_own_variables() {
+        // A project whose shipping profile is `dist` could not be swept at
+        // all while the prefix was hardcoded to RELEASE.
+        let configuration =
+            BuildConfiguration { opt_level: Some(OptLevel::Size), ..Default::default() };
+        let env = configuration.cargo_profile_env_for("dist");
+        assert_eq!(env.get("CARGO_PROFILE_DIST_OPT_LEVEL").map(String::as_str), Some("s"));
+        assert!(!env.keys().any(|key| key.contains("RELEASE")));
+    }
+
+    #[test]
+    fn a_profile_name_with_a_hyphen_becomes_an_underscore() {
+        let configuration = BuildConfiguration { codegen_units: Some(1), ..Default::default() };
+        let env = configuration.cargo_profile_env_for("release-lto");
+        assert!(env.contains_key("CARGO_PROFILE_RELEASE_LTO_CODEGEN_UNITS"), "{env:?}");
     }
 
     #[test]

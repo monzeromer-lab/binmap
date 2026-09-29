@@ -89,7 +89,8 @@ impl BinmapEngine {
         // Beside our own build products, never in the user's tree.
         let sessions = SessionStore::new(config.target_directory.join("sessions"));
         let runner = ToolRunner::new(EvidenceStore::new(), config.root.clone());
-        let builder = CargoBuildSystem::new(runner.clone(), config.target_directory.clone());
+        let builder = CargoBuildSystem::new(runner.clone(), config.target_directory.clone())
+            .with_profile(config.profile.clone());
         let targets = builder.targets(&config.root)?;
 
         Ok(Self {

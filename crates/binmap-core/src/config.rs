@@ -277,6 +277,12 @@ pub struct ProjectConfig {
     pub test_command: Option<BenchmarkCommand>,
     #[serde(default)]
     pub matrix: SweepMatrix,
+    /// The profile to sweep.
+    ///
+    /// `release` unless the project ships from somewhere else. `F0.1` asks for
+    /// profiles to be enumerated, and this is what the enumeration is for.
+    #[serde(default = "release_profile")]
+    pub profile: String,
     /// Our target directory, kept separate so the user's own cache is never
     /// disturbed (`F0.8`).
     pub target_directory: PathBuf,
@@ -306,11 +312,16 @@ impl ProjectConfig {
             benchmark: None,
             test_command: None,
             matrix: SweepMatrix::default(),
+            profile: release_profile(),
             target_directory,
             parallelism: default_parallelism(),
             trust_tier: TrustTier::default(),
         }
     }
+}
+
+fn release_profile() -> String {
+    "release".to_string()
 }
 
 fn default_parallelism() -> usize {

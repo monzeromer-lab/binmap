@@ -9,6 +9,32 @@ use binmap_core::traits::{Target, TargetFamily};
 use cargo_metadata::{MetadataCommand, Package, TargetKind};
 use std::path::Path;
 
+/// The profiles a project declares, plus the ones cargo always has.
+///
+/// `F0.1` asks for targets *and profiles*. Only targets were enumerated, so a
+/// project whose shipping profile is a custom one — `dist` is the common name,
+/// and cargo has supported custom profiles since 1.57 — could not be swept at
+/// all. The sweep still defaults to `release`, because that is what almost
+/// everyone ships; this is what makes the other case reachable.
+pub fn profiles(root: &Path) -> Vec<String> {
+    // Cargo's own, which exist whether or not the manifest mentions them.
+    let mut found = vec!["release".to_string(), "dev".to_string()];
+
+    let manifest = root.join("Cargo.toml");
+    let Ok(text) = std::fs::read_to_string(&manifest) else { return found };
+    let Ok(document) = text.parse::<toml_edit::DocumentMut>() else { return found };
+    let Some(profiles) = document.get("profile").and_then(toml_edit::Item::as_table) else {
+        return found;
+    };
+
+    for (name, _) in profiles.iter() {
+        if !found.iter().any(|existing| existing == name) {
+            found.push(name.to_string());
+        }
+    }
+    found
+}
+
 /// Whether the directory holds one package or a workspace of them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectKind {
@@ -113,6 +139,38 @@ pub fn discover(runner: &ToolRunner, root: &Path) -> Result<(ProjectKind, Vec<Ta
 mod tests {
     use super::*;
     use binmap_core::evidence::EvidenceStore;
+
+    #[test]
+    fn cargos_own_profiles_are_always_offered() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        let found = profiles(directory.path());
+        assert!(found.contains(&"release".to_string()));
+        assert!(found.contains(&"dev".to_string()));
+    }
+
+    #[test]
+    fn a_custom_profile_is_discovered_from_the_manifest() {
+        // The case F0.1 covers and nothing reached: a project that ships from
+        // `dist` rather than `release`.
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("Cargo.toml"),
+            "[package]\nname = \"x\"\n\n[profile.dist]\ninherits = \"release\"\nlto = true\n",
+        )
+        .unwrap();
+        let found = profiles(directory.path());
+        assert!(found.contains(&"dist".to_string()), "{found:?}");
+        // And the built-ins are not duplicated by a manifest that names them.
+        assert_eq!(found.iter().filter(|p| *p == "release").count(), 1);
+    }
+
+    #[test]
+    fn our_own_workspace_declares_a_release_profile_and_it_is_not_listed_twice() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+        let found = profiles(root);
+        assert_eq!(found.iter().filter(|p| *p == "release").count(), 1, "{found:?}");
+    }
 
     #[test]
     fn a_directory_with_no_manifest_says_so_by_path() {

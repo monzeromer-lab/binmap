@@ -76,6 +76,12 @@ pub fn apply(config: &mut ProjectConfig) -> Result<bool> {
             Some(BenchmarkCommand { program: program.to_string(), arguments, samples });
     }
 
+    if let Some(profile) =
+        document.get("sweep").and_then(|s| s.get("profile")).and_then(Item::as_str)
+    {
+        config.profile = profile.to_string();
+    }
+
     if let Some(parallelism) =
         document.get("sweep").and_then(|s| s.get("parallelism")).and_then(Item::as_integer)
     {
@@ -219,6 +225,20 @@ mod tests {
         let error = apply(&mut config).unwrap_err().to_string();
         assert!(error.contains("opt-level"), "{error}");
         assert!(error.contains("fast"), "{error}");
+    }
+
+    #[test]
+    fn a_project_that_ships_from_a_custom_profile_can_say_so() {
+        let (_d, mut config) = config_with("[sweep]\nprofile = \"dist\"\n");
+        apply(&mut config).unwrap();
+        assert_eq!(config.profile, "dist");
+    }
+
+    #[test]
+    fn a_project_that_says_nothing_sweeps_release() {
+        let (_d, mut config) = config_with("[sweep]\nopt-level = [\"3\"]\n");
+        apply(&mut config).unwrap();
+        assert_eq!(config.profile, "release");
     }
 
     #[test]

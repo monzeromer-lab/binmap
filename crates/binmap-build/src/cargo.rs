@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 /// Cargo, driven against one project.
 pub struct CargoBuildSystem {
     runner: ToolRunner,
+    /// The profile being swept. `release` unless the project ships from
+    /// somewhere else.
+    profile: String,
     /// The target triple, needed by `-Zbuild-std`. Detected from the
     /// toolchain, because a build-std sweep without one cannot work.
     host_triple: Option<String>,
@@ -37,7 +40,17 @@ impl CargoBuildSystem {
             runner.root().join(target_directory)
         };
         let host_triple = Self::host_triple(&runner);
-        Self { runner, target_directory, host_triple }
+        Self { runner, target_directory, host_triple, profile: "release".to_string() }
+    }
+
+    /// Sweep a profile other than `release`.
+    pub fn with_profile(mut self, profile: impl Into<String>) -> Self {
+        self.profile = profile.into();
+        self
+    }
+
+    pub fn profile(&self) -> &str {
+        &self.profile
     }
 
     /// Ask rustc what it builds for. `-Zbuild-std` needs an explicit
@@ -73,7 +86,11 @@ impl CargoBuildSystem {
         target: &Target,
         configuration: &BuildConfiguration,
     ) -> Vec<String> {
-        let mut arguments = vec!["build".to_string(), "--release".to_string()];
+        // `--profile <name>` rather than `--release`, so a project that ships
+        // from a custom profile is swept as it ships. They mean the same thing
+        // when the profile is `release`.
+        let mut arguments =
+            vec!["build".to_string(), "--profile".to_string(), self.profile.clone()];
         arguments.extend(configuration.unstable_args(self.host_triple.as_deref()));
         arguments.push("--package".into());
         arguments.push(target.package.clone());
@@ -110,7 +127,7 @@ impl CargoBuildSystem {
     /// is never modified, which is what makes cancellation leave nothing to
     /// clean up.
     fn env_for(&self, configuration: &BuildConfiguration) -> BTreeMap<String, String> {
-        let mut env = configuration.cargo_profile_env();
+        let mut env = configuration.cargo_profile_env_for(&self.profile);
         let flags = configuration.rustflags();
         if !flags.is_empty() {
             // Append rather than replace. Setting RUSTFLAGS outright dropped
