@@ -36,6 +36,7 @@ pub struct ScriptedEngine {
     pub started: Mutex<Vec<Request>>,
     pub restores: Mutex<Vec<String>>,
     pub exports: Mutex<Vec<String>>,
+    benchmark: Option<String>,
 }
 
 impl Default for ScriptedEngine {
@@ -57,6 +58,7 @@ impl ScriptedEngine {
             started: Mutex::new(Vec::new()),
             restores: Mutex::new(Vec::new()),
             exports: Mutex::new(Vec::new()),
+            benchmark: None,
         }
     }
 
@@ -71,6 +73,12 @@ impl ScriptedEngine {
             manifest: "Cargo.toml".into(),
             capabilities: capabilities.iter().copied().collect::<Capabilities>(),
         });
+        self
+    }
+
+    /// Declare a benchmark, so runtime becomes an objective.
+    pub fn with_benchmark(mut self, command: &str) -> Self {
+        self.benchmark = Some(command.to_string());
         self
     }
 
@@ -205,6 +213,10 @@ impl Engine for ScriptedEngine {
             std::path::PathBuf::from(format!("/scripted/{target}.export.binmap.json")),
             "Redacted: 3 × home directory paths.".to_string(),
         ))
+    }
+
+    fn benchmark_command(&self) -> Option<String> {
+        self.benchmark.clone()
     }
 
     fn restore_session(&self, target: &str) -> usize {

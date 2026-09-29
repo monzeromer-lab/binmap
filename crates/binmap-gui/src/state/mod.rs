@@ -421,12 +421,90 @@ pub enum Action {
     PaletteConfirm,
     /// `U13`: write the session out for someone else to read, redacted.
     ExportSession,
+    /// Move the first-run flow on, back, or straight to the application.
+    FlowNext,
+    FlowBack,
+    FlowSkip,
     /// `U9`: raising the tier is always a deliberate act, so this opens the
     /// dialog rather than changing anything.
     OpenTierDialog,
     /// Confirm the tier the dialog is offering.
     SetTier(binmap_core::config::TrustTier),
     CloseDialogs,
+}
+
+/// Where the first-run flow has got to.
+///
+/// The flow runs when a project is opened for the first time and is skipped
+/// when a previous session restores — you configured it once, and being walked
+/// through it again is a tool that does not remember you.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Stage {
+    /// Step 1: what is missing, and the exact fix.
+    Environment,
+    /// Step 2: which target, and how to measure its runtime.
+    Configure,
+    /// Step 3: who is going to think about this.
+    Reasoner,
+    /// The application proper.
+    #[default]
+    Ready,
+}
+
+impl Stage {
+    /// The three steps, in order. `Ready` is not a step.
+    pub const STEPS: [Stage; 3] = [Stage::Environment, Stage::Configure, Stage::Reasoner];
+
+    /// "Step 1 of 3", as the design labels it.
+    pub fn label(self) -> Option<String> {
+        let position = Stage::STEPS.iter().position(|step| *step == self)?;
+        Some(format!("Step {} of {}", position + 1, Stage::STEPS.len()))
+    }
+
+    pub fn heading(self) -> &'static str {
+        match self {
+            Stage::Environment => "What is missing, and the exact fix",
+            Stage::Configure => "What Binmap found, and the one thing it cannot",
+            Stage::Reasoner => "Who is going to think about this?",
+            Stage::Ready => "",
+        }
+    }
+
+    pub fn blurb(self) -> &'static str {
+        match self {
+            Stage::Environment => {
+                "Every check here maps to a feature that would otherwise fail later, at a worse \
+                 moment. None of it blocks a configuration sweep — the affected axes stay \
+                 unavailable until fixed."
+            }
+            Stage::Configure => {
+                "Targets are read from cargo metadata. The benchmark command is the only thing \
+                 Binmap cannot discover, and without one runtime is simply not an objective — \
+                 never a guessed one."
+            }
+            Stage::Reasoner => {
+                "Binmap measures either way. A reasoner adds explanation, ranking and proposals, \
+                 and may only cite evidence the engine produced."
+            }
+            Stage::Ready => "",
+        }
+    }
+
+    pub fn next(self) -> Stage {
+        match self {
+            Stage::Environment => Stage::Configure,
+            Stage::Configure => Stage::Reasoner,
+            Stage::Reasoner | Stage::Ready => Stage::Ready,
+        }
+    }
+
+    pub fn previous(self) -> Option<Stage> {
+        match self {
+            Stage::Environment | Stage::Ready => None,
+            Stage::Configure => Some(Stage::Environment),
+            Stage::Reasoner => Some(Stage::Configure),
+        }
+    }
 }
 
 /// Which tab of the Findings Inspector is showing.

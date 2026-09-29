@@ -370,3 +370,52 @@ fn export_is_reachable_from_the_keyboard_like_everything_else() {
     assert_eq!(command.action, Action::ExportSession);
     assert_eq!(command.shortcut, Some("⌘⇧E"));
 }
+
+// ---------------------------------------------------------------------------
+// The first-run flow
+// ---------------------------------------------------------------------------
+
+use binmap_gui::state::Stage;
+
+#[test]
+fn the_flow_is_three_steps_and_each_one_says_where_it_is() {
+    assert_eq!(Stage::STEPS.len(), 3);
+    assert_eq!(Stage::Environment.label().as_deref(), Some("Step 1 of 3"));
+    assert_eq!(Stage::Configure.label().as_deref(), Some("Step 2 of 3"));
+    assert_eq!(Stage::Reasoner.label().as_deref(), Some("Step 3 of 3"));
+    // Ready is the application, not a step.
+    assert_eq!(Stage::Ready.label(), None);
+}
+
+#[test]
+fn the_flow_walks_forward_to_ready_and_back_to_the_start() {
+    let mut stage = Stage::Environment;
+    for _ in 0..3 {
+        stage = stage.next();
+    }
+    assert_eq!(stage, Stage::Ready);
+    // And stays there rather than wrapping into the flow again.
+    assert_eq!(stage.next(), Stage::Ready);
+
+    assert_eq!(Stage::Reasoner.previous(), Some(Stage::Configure));
+    assert_eq!(Stage::Environment.previous(), None, "there is nothing before the first step");
+    assert_eq!(Stage::Ready.previous(), None, "the application does not go back into setup");
+}
+
+#[test]
+fn every_step_has_a_heading_and_a_reason_for_existing() {
+    for stage in Stage::STEPS {
+        assert!(!stage.heading().is_empty(), "{stage:?} has no heading");
+        assert!(stage.blurb().len() > 40, "{stage:?} does not say why it is asking");
+    }
+}
+
+#[test]
+fn a_project_with_no_benchmark_says_runtime_is_not_an_objective() {
+    // Not an error and not a blocker — a different thing from being fast.
+    let engine = engine();
+    assert_eq!(engine.benchmark_command(), None);
+
+    let declared = ScriptedEngine::new().with_benchmark("cargo bench --bench route");
+    assert_eq!(declared.benchmark_command().as_deref(), Some("cargo bench --bench route"));
+}

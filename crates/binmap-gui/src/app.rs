@@ -10,7 +10,7 @@
 //! there is exactly one place events are applied and it always notifies.
 
 use crate::dispatch::Dispatch;
-use crate::state::{Action, AppState, View};
+use crate::state::{Action, AppState, Stage, View};
 use crate::theme::{Appearance, Theme, space};
 use crate::views::chrome::{NavRail, StatusBar, TitleBar};
 use crate::views::environment::EnvironmentPanel;
@@ -98,6 +98,8 @@ pub struct Binmap {
     selected_configuration: Option<String>,
     /// How many runs a previous session left behind.
     restored: usize,
+    /// Where the first-run flow has got to.
+    stage: Stage,
     /// The window's focus, so key bindings reach the frame.
     focus: gpui_kit::FocusHandle,
 }
@@ -133,9 +135,16 @@ impl Binmap {
         }
         // Land where the restored work is. Someone reopening a project after a
         // sweep wants the sweep, not the target list they already chose from.
-        if restored > 0 {
+        //
+        // A restored session also means the flow has been through once
+        // already: being walked through setup again is a tool that does not
+        // remember you.
+        let stage = if restored > 0 {
             state.select_view(View::Tune);
-        }
+            Stage::Ready
+        } else {
+            Stage::Environment
+        };
 
         // Drain the channel on the foreground. Every applied event notifies,
         // which is the repaint request.
@@ -174,6 +183,7 @@ impl Binmap {
             active: None,
             selected_configuration: None,
             restored,
+            stage,
             palette: false,
             query: String::new(),
             palette_index: 0,
@@ -340,6 +350,15 @@ impl Binmap {
                     }),
                 }
             }
+            Action::FlowNext => self.stage = self.stage.next(),
+            Action::FlowBack => {
+                if let Some(previous) = self.stage.previous() {
+                    self.stage = previous;
+                }
+            }
+            // Every step is skippable. A first-run flow that gates the product
+            // on answering it is a tool people close.
+            Action::FlowSkip => self.stage = Stage::Ready,
             Action::OpenTierDialog => self.tier_dialog = true,
             Action::SetTier(tier) => {
                 // U9: raising a tier is always deliberate, and it is the
@@ -370,6 +389,7 @@ impl Binmap {
 
 impl Render for Binmap {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The frame and the flow are different shapes, so both are erased.
         let theme = self.theme;
         let dispatch = self.dispatcher(cx);
         let c = theme.colours;
@@ -387,6 +407,25 @@ impl Render for Binmap {
         let selected = self.state.selected_finding().cloned();
         let evidence =
             selected.as_ref().map(|finding| self.engine.evidence(finding.id())).unwrap_or_default();
+
+        if self.stage != Stage::Ready {
+            let flow = crate::views::flow::FirstRun::new(
+                self.stage,
+                &self.state,
+                self.project.clone(),
+                self.engine.benchmark_command(),
+                theme,
+                &dispatch,
+            );
+            return div()
+                .id("binmap-flow")
+                .size_full()
+                .bg(c.surface_app)
+                .text_color(c.text_body)
+                .font_family("IBM Plex Sans")
+                .child(flow)
+                .into_any_element();
+        }
 
         div()
             .id("binmap")
@@ -513,6 +552,7 @@ impl Render for Binmap {
                     &dispatch,
                 ))
             })
+            .into_any_element()
     }
 }
 

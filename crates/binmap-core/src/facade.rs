@@ -280,6 +280,13 @@ pub trait Engine: Send + Sync {
     /// is reported so it can be attached to a bug report.
     fn export_session(&self, target: &str) -> crate::Result<(std::path::PathBuf, String)>;
 
+    /// The benchmark command the project declares, if it declares one.
+    ///
+    /// `None` means runtime is not an objective — which is a different thing
+    /// from the project being fast, and the interface says so rather than
+    /// showing a blank number.
+    fn benchmark_command(&self) -> Option<String>;
+
     /// Every sweep this session has run or restored.
     ///
     /// The Profile Lab's whole source. The engine held the measurements and

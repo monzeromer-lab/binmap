@@ -7,6 +7,7 @@
 
 pub mod chrome;
 pub mod environment;
+pub mod flow;
 pub mod inspector;
 pub mod palette;
 pub mod profile_lab;

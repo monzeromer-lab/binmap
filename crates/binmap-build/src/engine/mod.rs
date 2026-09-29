@@ -490,6 +490,15 @@ impl Engine for BinmapEngine {
         Ok((path, described))
     }
 
+    fn benchmark_command(&self) -> Option<String> {
+        self.inner.config.read().expect("config poisoned").benchmark.as_ref().map(|command| {
+            std::iter::once(command.program.clone())
+                .chain(command.arguments.iter().cloned())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+    }
+
     fn restore_session(&self, target: &str) -> usize {
         // A session that cannot be read is worth saying so about, but it is
         // not worth refusing to open the project over.
