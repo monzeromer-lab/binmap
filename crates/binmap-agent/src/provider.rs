@@ -402,8 +402,6 @@ pub fn reasoners(allow_cloud: bool) -> Vec<Reasoner> {
             // provider the project will not permit is advice that cannot help.
             let unavailable = if spec.cloud && !allow_cloud {
                 Some(Unavailable::CloudForbidden)
-            } else if spec.shape == ApiShape::Anthropic {
-                Some(Unavailable::NotImplemented { arrives_in: "Phase 1.5".into() })
             } else if !key_present(spec) {
                 Some(Unavailable::NoCredential { variable: spec.key_env.to_string() })
             } else {

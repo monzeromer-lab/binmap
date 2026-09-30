@@ -25,11 +25,17 @@ use serde_json::{Value, json};
 /// Exists so the wire format can be tested without a network, and so the real
 /// HTTP client is a leaf rather than something the loop depends on.
 pub trait HttpTransport: Send + Sync + std::fmt::Debug {
-    /// POST `body` to `url` and return the response body.
+    /// POST `body` to `url` with `headers`, and return the response body.
     ///
-    /// `key` is `None` for a local runner. Implementations must not log the
-    /// key, and nothing here ever returns it (`§6.3`).
-    fn post_json(&self, url: &str, key: Option<&str>, body: &Value) -> Result<String>;
+    /// Headers rather than a bare key because the two API shapes authenticate
+    /// differently: OpenAI-compatible endpoints take `Authorization: Bearer`,
+    /// and Anthropic takes `x-api-key` plus a required `anthropic-version`.
+    /// Pushing that difference into the backends keeps the transport a
+    /// transport.
+    ///
+    /// Implementations must not log a header value: one of them is a secret
+    /// every time. Nothing here ever returns one (`§6.3`).
+    fn post_json(&self, url: &str, headers: &[(&str, String)], body: &Value) -> Result<String>;
 }
 
 /// A transport that refuses.
@@ -40,7 +46,7 @@ pub trait HttpTransport: Send + Sync + std::fmt::Debug {
 pub struct UnavailableTransport;
 
 impl HttpTransport for UnavailableTransport {
-    fn post_json(&self, url: &str, _key: Option<&str>, _body: &Value) -> Result<String> {
+    fn post_json(&self, url: &str, _headers: &[(&str, String)], _body: &Value) -> Result<String> {
         Err(Error::Other(format!(
             "no HTTP transport is configured, so {url} cannot be reached. A reasoner needs one; \
              every deterministic analysis does not."
@@ -108,7 +114,14 @@ impl ModelBackend for OpenAiCompatibleBackend {
         let request = apply_quirks(request, &self.quirks);
         let body = encode_request(&request, &self.model);
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
-        let raw = self.transport.post_json(&url, self.key().as_deref(), &body)?;
+        // OpenAI-compatible endpoints authenticate with a bearer token. A
+        // local runner needs none, and sending an empty one is worse than
+        // sending nothing.
+        let mut headers: Vec<(&str, String)> = vec![("content-type", "application/json".into())];
+        if let Some(key) = self.key() {
+            headers.push(("authorization", format!("Bearer {key}")));
+        }
+        let raw = self.transport.post_json(&url, &headers, &body)?;
         decode_response(&raw)
     }
 }
@@ -312,7 +325,7 @@ impl UreqTransport {
 }
 
 impl HttpTransport for UreqTransport {
-    fn post_json(&self, url: &str, key: Option<&str>, body: &Value) -> Result<String> {
+    fn post_json(&self, url: &str, headers: &[(&str, String)], body: &Value) -> Result<String> {
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(self.timeout))
             // A non-2xx is not an error to be thrown away: its body is
@@ -324,9 +337,9 @@ impl HttpTransport for UreqTransport {
             .build()
             .into();
 
-        let mut request = agent.post(url).header("content-type", "application/json");
-        if let Some(key) = key {
-            request = request.header("authorization", &format!("Bearer {key}"));
+        let mut request = agent.post(url);
+        for (name, value) in headers {
+            request = request.header(*name, value);
         }
 
         // Serialised here rather than through ureq's `json` feature: we

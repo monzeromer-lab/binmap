@@ -13,6 +13,7 @@
 //! be a test. Phase 1 adds the OpenAI-compatible backend, which covers every
 //! provider in the table except Claude, and the loop that drives it.
 
+pub mod anthropic;
 pub mod backend;
 pub mod gate;
 pub mod native;

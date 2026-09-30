@@ -256,14 +256,9 @@ pub fn backend_for(
         crate::provider::ApiShape::OpenAiCompatible => {
             Ok(Box::new(crate::openai::OpenAiCompatibleBackend::new(spec, &model_spec, transport)))
         }
-        // Claude's own shape is Phase 1.5's row to add; until it exists,
-        // saying so is better than quietly sending Anthropic an
-        // OpenAI-shaped body and reporting whatever error it returns.
-        crate::provider::ApiShape::Anthropic => Err(Error::Other(format!(
-            "{} speaks Anthropic's messages API, which arrives in Phase 1.5. Every \
-             OpenAI-compatible provider works now, including a local runner.",
-            spec.display
-        ))),
+        crate::provider::ApiShape::Anthropic => {
+            Ok(Box::new(crate::anthropic::AnthropicBackend::new(spec, &model_spec, transport)))
+        }
         crate::provider::ApiShape::Null => Ok(Box::new(NullBackend::new())),
     }
 }

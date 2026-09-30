@@ -227,9 +227,10 @@ fn cloud_forbidden_outranks_a_missing_key() {
 }
 
 #[test]
-fn claude_says_it_arrives_later_rather_than_failing_at_the_first_call() {
-    // Sending Anthropic an OpenAI-shaped body and reporting whatever it
-    // returns would blame the user for our missing wire shape.
+fn claude_is_offered_once_its_wire_shape_exists() {
+    // This used to report "not supported yet — arrives in Phase 1.5", which
+    // was true and is not any more. A row that still refused would be the
+    // product lying about its own capabilities.
     let offered = binmap_agent::provider::reasoners(true);
     let anthropic = offered
         .iter()
@@ -237,8 +238,9 @@ fn claude_says_it_arrives_later_rather_than_failing_at_the_first_call() {
         .expect("Claude is listed");
 
     match &anthropic.unavailable {
-        Some(Unavailable::NotImplemented { arrives_in }) => assert_eq!(arrives_in, "Phase 1.5"),
-        other => panic!("expected a not-implemented reason, got {other:?}"),
+        // The only thing that may stop it now is a missing key.
+        None | Some(Unavailable::NoCredential { .. }) => {}
+        other => panic!("Claude should be selectable or missing a key, got {other:?}"),
     }
 }
 

@@ -21,15 +21,24 @@ use std::sync::{Arc, Mutex};
 struct Scripted {
     reply: String,
     seen: Mutex<Vec<Value>>,
+    headers: Mutex<Vec<Vec<(String, String)>>>,
 }
 
 impl Scripted {
     fn new(reply: impl Into<String>) -> Arc<Self> {
-        Arc::new(Self { reply: reply.into(), seen: Mutex::new(Vec::new()) })
+        Arc::new(Self {
+            reply: reply.into(),
+            seen: Mutex::new(Vec::new()),
+            headers: Mutex::new(Vec::new()),
+        })
     }
 
     fn last_body(&self) -> Value {
         self.seen.lock().unwrap().last().cloned().expect("something was posted")
+    }
+
+    fn last_headers(&self) -> Vec<(String, String)> {
+        self.headers.lock().unwrap().last().cloned().expect("something was posted")
     }
 }
 
@@ -37,9 +46,13 @@ impl HttpTransport for Scripted {
     fn post_json(
         &self,
         _url: &str,
-        _key: Option<&str>,
+        headers: &[(&str, String)],
         body: &Value,
     ) -> binmap_core::Result<String> {
+        self.headers
+            .lock()
+            .unwrap()
+            .push(headers.iter().map(|(n, v)| ((*n).to_string(), v.clone())).collect());
         self.seen.lock().unwrap().push(body.clone());
         Ok(self.reply.clone())
     }
@@ -312,4 +325,48 @@ fn no_transport_configured_is_a_sentence_rather_than_a_hang() {
         .complete(CompletionRequest::new(model.id.clone(), vec![Message::user("hi")]))
         .expect_err("there is nothing to talk to");
     assert!(error.to_string().contains("no HTTP transport"), "{error}");
+}
+
+#[test]
+fn an_openai_compatible_endpoint_authenticates_with_a_bearer_token() {
+    // The other half of the two-shape split: Anthropic takes `x-api-key`, and
+    // sending a bearer there is silently unauthenticated. Asserting each
+    // backend sends its own is how that stays true.
+    //
+    // SAFETY: single-threaded test, and the value is a test credential for an
+    // endpoint that is never reached.
+    unsafe { std::env::set_var("OPENAI_API_KEY", "test-key-not-real") };
+    let transport = Scripted::new(completion("hi"));
+    let spec = provider("openai").expect("openai is in the table");
+    let model = spec.default_model().unwrap();
+
+    OpenAiCompatibleBackend::new(spec, model, transport.clone())
+        .complete(CompletionRequest::new(model.id.clone(), vec![Message::user("hi")]))
+        .expect("the scripted transport replies");
+
+    let headers = transport.last_headers();
+    let header =
+        |name: &str| headers.iter().find(|(key, _)| key == name).map(|(_, value)| value.clone());
+    assert_eq!(header("authorization").as_deref(), Some("Bearer test-key-not-real"));
+    assert_eq!(header("content-type").as_deref(), Some("application/json"));
+    assert!(header("x-api-key").is_none(), "that is the other shape's header");
+
+    unsafe { std::env::remove_var("OPENAI_API_KEY") };
+}
+
+#[test]
+fn a_local_runner_is_sent_no_authorization_header_at_all() {
+    // An empty bearer is worse than none: some runners reject it.
+    let transport = Scripted::new(completion("hi"));
+    let spec = provider("local").unwrap();
+    let model = spec.default_model().unwrap();
+
+    OpenAiCompatibleBackend::new(spec, model, transport.clone())
+        .complete(CompletionRequest::new(model.id.clone(), vec![Message::user("hi")]))
+        .expect("replies");
+
+    assert!(
+        !transport.last_headers().iter().any(|(name, _)| name == "authorization"),
+        "a local runner needs no key, so it is sent none"
+    );
 }
