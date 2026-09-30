@@ -196,6 +196,17 @@ jobs:
       - name: Attribute the bundle
         run: cargo run --release -p binmap-eval -- web corpus/web
 
+      # A real V8 profile of the minified bundle, mapped back to TypeScript.
+      # The frames are `r`, `o` and `u` until the source map is applied.
+      - name: Profile and map back to source
+        working-directory: corpus/web
+        run: |
+          npm run profile
+          cd ../.. && cargo run --release -p binmap-eval -- \
+            v8 corpus/web/profiles/*.cpuprofile --project corpus/web | tee /tmp/v8.out
+          grep -q "src/analysis.ts" /tmp/v8.out \
+            || { echo "::error::frames were not mapped back to TypeScript"; exit 1; }
+
       - name: Web backend tests
         run: cargo test --release -p binmap-web
 

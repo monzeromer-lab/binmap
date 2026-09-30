@@ -831,6 +831,7 @@ dependencies = [
  "binmap-web",
  "clap",
  "serde_json",
+ "sourcemap",
 ]
 
 [[package]]

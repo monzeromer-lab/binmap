@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "esbuild src/index.ts --bundle --minify --sourcemap --format=esm --outdir=dist --metafile=dist/meta.json",
-    "build:split": "esbuild src/index.ts --bundle --minify --sourcemap --format=esm --splitting --outdir=dist --metafile=dist/meta.json"
+    "build:split": "esbuild src/index.ts --bundle --minify --sourcemap --format=esm --splitting --outdir=dist --metafile=dist/meta.json",
+    "profile": "node --cpu-prof --cpu-prof-dir=profiles bench.js"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

@@ -20,6 +20,7 @@ pub mod size;
 pub mod sourcemap;
 pub mod sweep;
 pub mod tier;
+pub mod v8;
 
 pub use size::{CompressionSettings, Ranking, TransferSize, measure, rank};
 pub use tier::{Detection, Tier};

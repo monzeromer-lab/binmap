@@ -18,3 +18,18 @@ Build it two ways:
 npm run build         # one chunk
 npm run build:split   # code splitting, so the lazy chunk is separate
 ```
+
+## Profiling
+
+`bench.js` imports the built bundle and does enough work to be sampled, so the
+profile's frames are the bundle's own minified names — which is what makes
+mapping them back through the source map a real test rather than a synthetic
+one.
+
+```bash
+npm run build && npm run profile
+cargo run -p binmap-eval -- v8 profiles/*.cpuprofile --project .
+```
+
+A profile of a minified bundle names `r`, `o` and `u`. Mapped, it names
+`src/analysis.ts` and `src/format.ts`.

@@ -18,3 +18,4 @@ corpus/web-heavy/dist/
 corpus/crasher/cores/
 corpus/crasher/target/
 corpus/hotloop/target/
+corpus/web/profiles/

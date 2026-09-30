@@ -88,6 +88,8 @@ enum Command {
     /// Injects regressions into a program with a known hot function and checks
     /// the responsible one is identified in the top three.
     Acceptance3(Acceptance3Options),
+    /// Read a V8 CPU profile and map it back to TypeScript.
+    V8(V8Options),
     /// Serve the tool registry over MCP on stdio (`A2.2`).
     ///
     /// This is what an external agent spawns. It speaks line-delimited
@@ -111,6 +113,18 @@ struct Acceptance3Options {
     /// noise, at the cost of a slower run.
     #[arg(long, default_value = "6")]
     seconds: u64,
+}
+
+#[derive(Args, Debug, Clone)]
+struct V8Options {
+    /// The `.cpuprofile`.
+    profile: PathBuf,
+    /// The project whose bundle it profiled, for the source maps.
+    #[arg(long)]
+    project: Option<PathBuf>,
+    /// Show every function rather than only the reader's own code.
+    #[arg(long)]
+    all: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -227,6 +241,7 @@ fn main() -> ExitCode {
         Command::Mcp(options) => mcp(options),
         Command::Acceptance2(options) => acceptance_phase_two(options),
         Command::Acceptance3(options) => acceptance_phase_three(options),
+        Command::V8(options) => v8(options),
     };
 
     match result {
@@ -1568,4 +1583,62 @@ fn acceptance_phase_three(options: &Acceptance3Options) -> Result<bool, String> 
     let passed = rate >= 0.70;
     println!("\n{}", if passed { "PASS" } else { "FAIL" });
     Ok(passed)
+}
+
+/// Read a V8 CPU profile, mapped back to TypeScript.
+///
+/// "Your-code-only on by default", because a profile of a node program is
+/// mostly node and a reader opening one is not looking for `node:fs`.
+fn v8(options: &V8Options) -> Result<bool, String> {
+    let raw = std::fs::read(&options.profile)
+        .map_err(|error| format!("could not read {}: {error}", options.profile.display()))?;
+    let mut profile = binmap_web::v8::read(&raw).map_err(|error| error.to_string())?;
+    println!("{}", profile.describe());
+
+    // Map through whichever source map covers each frame. The maps are loaded
+    // once and looked up per frame, rather than once per frame.
+    if let Some(project) = &options.project {
+        let discovered =
+            binmap_web::project::discover(project).map_err(|error| error.to_string())?;
+        let mut maps: Vec<(String, binmap_web::sourcemap::SourceAttribution)> = Vec::new();
+        let mut lookups: std::collections::BTreeMap<String, sourcemap::SourceMap> =
+            Default::default();
+
+        for asset in &discovered.assets {
+            let Some(map_path) = &asset.map else { continue };
+            let Ok(bytes) = std::fs::read(map_path) else { continue };
+            let Ok(map) = sourcemap::SourceMap::from_reader(&bytes[..]) else { continue };
+            let name = asset
+                .path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_default();
+            lookups.insert(name, map);
+        }
+        let _ = &mut maps;
+
+        println!("{} source maps loaded", lookups.len());
+        binmap_web::v8::map_through(&mut profile, |url, line, column| {
+            // V8 reports a url; a map is keyed by the asset's file name, which
+            // is the last path segment of that url.
+            let name = url.rsplit('/').next()?;
+            let map = lookups.get(name)?;
+            let token = map.lookup_token(line, column)?;
+            Some((token.get_source()?.to_string(), token.get_src_line() + 1))
+        });
+    }
+
+    let shown: Vec<&binmap_web::v8::Hot> =
+        if options.all { profile.hot.iter().collect() } else { profile.yours() };
+
+    if shown.is_empty() {
+        println!("\nnothing of yours in this profile. Pass --all to see node's frames too.");
+        return Ok(true);
+    }
+
+    println!("\nhottest by self time:");
+    for hot in shown.iter().take(15) {
+        println!("  {}", hot.describe(profile.total_samples));
+    }
+    Ok(true)
 }
