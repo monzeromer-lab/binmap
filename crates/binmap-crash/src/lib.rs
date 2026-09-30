@@ -18,6 +18,7 @@ pub mod correspondence;
 pub mod dump;
 pub mod modules;
 pub mod registers;
+pub mod report;
 pub mod symbolize;
 pub mod unwind;
 

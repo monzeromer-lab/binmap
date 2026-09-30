@@ -13,6 +13,7 @@ pub mod inspector;
 pub mod palette;
 pub mod profile_lab;
 pub mod size;
+pub mod stack;
 pub mod targets;
 pub mod treemap;
 

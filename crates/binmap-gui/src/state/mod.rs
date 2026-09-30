@@ -5,6 +5,7 @@
 //! is only cheap if the state can be driven without a window — so it is.
 
 use binmap_core::capability::{Capabilities, Capability};
+use binmap_core::crash::CrashReport;
 use binmap_core::event::{EngineEvent, RunId};
 use binmap_core::facade::{Probe, ProbeStatus};
 use binmap_core::finding::{Finding, FindingKind};
@@ -145,6 +146,13 @@ pub struct AppState {
     /// Set when the user picked something that cannot be used, so the panel can
     /// show why instead of silently ignoring the click.
     reasoner_refusal: Option<String>,
+    /// `U2.1`: the crash under examination, if any.
+    crash: Option<CrashReport>,
+    /// Which entry the source pane is following.
+    selected_frame: Option<usize>,
+    /// The crates the user wrote. There is no marker in a symbol name for it,
+    /// so "your code" has to be told rather than inferred.
+    own_crates: Vec<String>,
 }
 
 impl AppState {
@@ -273,6 +281,53 @@ impl AppState {
 
     pub fn set_probes(&mut self, probes: Vec<Probe>) {
         self.probes = probes;
+    }
+
+    // -- the crash (`U2.1`) ------------------------------------------------
+
+    pub fn crash_report(&self) -> Option<&CrashReport> {
+        self.crash.as_ref()
+    }
+
+    /// Show a crash, and select the first frame of the user's own code.
+    ///
+    /// `§U2.1`: the innermost frame of a panic is `pthread_kill`, and nobody
+    /// opened a debugger to look at that. Landing on the reader's own code is
+    /// the difference between a pane that answers the question and one that
+    /// makes them scroll for it.
+    pub fn set_crash(&mut self, report: CrashReport) {
+        self.selected_frame = report.first_of_yours(&self.own_crates);
+        self.crash = Some(report);
+    }
+
+    pub fn selected_frame(&self) -> Option<usize> {
+        self.selected_frame
+    }
+
+    /// Follow a frame. Refused for one with no source location, because the
+    /// source pane would scroll to nothing.
+    pub fn select_frame(&mut self, index: usize) -> bool {
+        let Some(report) = &self.crash else { return false };
+        match report.entries.get(index) {
+            Some(entry) if entry.file.is_some() => {
+                self.selected_frame = Some(index);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn own_crates(&self) -> Vec<String> {
+        self.own_crates.clone()
+    }
+
+    /// Tell the interface which crates are the user's own.
+    pub fn set_own_crates(&mut self, crates: Vec<String>) {
+        self.own_crates = crates;
+        // A crash already shown was selected against the old list.
+        if let Some(report) = &self.crash {
+            self.selected_frame = report.first_of_yours(&self.own_crates);
+        }
     }
 
     // -- the reasoner (`U1.3`) --------------------------------------------
@@ -540,6 +595,8 @@ pub enum Action {
     OpenTierDialog,
     /// Confirm the tier the dialog is offering.
     SetTier(binmap_core::config::TrustTier),
+    /// `U2.2`: follow a stack frame in the source pane.
+    SelectFrame(usize),
     /// `U1.3`: choose a reasoner. Refused, with the reason kept, when the row
     /// cannot be used — the reason is already known, and finding out at the
     /// first model call would report a setup problem as a session failure.

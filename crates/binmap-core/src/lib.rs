@@ -16,6 +16,7 @@ pub mod attribution;
 pub mod capability;
 pub mod config;
 pub mod configuration;
+pub mod crash;
 pub mod error;
 pub mod event;
 pub mod evidence;

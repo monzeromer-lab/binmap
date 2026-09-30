@@ -472,3 +472,166 @@ fn a_meter_with_no_budget_at_all_omits_the_denominator() {
     assert!(label.contains("3 steps"), "{label}");
     assert!(!label.contains("of 0"), "{label}");
 }
+
+// --- the crash pane (`U2.1`–`U2.3`) ----------------------------------------
+
+use binmap_core::crash::{CrashReport, FrameConfidence, Grounding, StackEntry};
+
+fn entry(frame: usize, function: &str, line: Option<u32>, inlined: bool) -> StackEntry {
+    StackEntry {
+        frame,
+        function: Some(function.into()),
+        file: line.map(|_| "src/main.rs".to_string()),
+        line,
+        inlined,
+        confidence: FrameConfidence::Certain,
+        module: Some("app".into()),
+        address: 0x1000 + frame as u64,
+    }
+}
+
+fn a_report(entries: Vec<StackEntry>) -> CrashReport {
+    let total = entries.len();
+    let resolved = entries.iter().filter(|e| e.line.is_some()).count();
+    CrashReport {
+        title: "null pointer dereference".into(),
+        what_to_look_at: "what was expected to be non-null".into(),
+        entries,
+        provenance: Grounding {
+            binary_matches: true,
+            correspondence: "same build id".into(),
+            bias_corroborated: true,
+            resolved,
+            total,
+            incomplete_because: None,
+        },
+        pid: 42,
+        signal: 11,
+    }
+}
+
+#[test]
+fn opening_a_crash_lands_on_the_readers_own_code() {
+    // The innermost frame of a panic is `pthread_kill`, and nobody opened a
+    // debugger to look at that.
+    let mut state = AppState::new();
+    state.set_own_crates(vec!["app".into()]);
+    state.set_crash(a_report(vec![
+        entry(0, "pthread_kill", Some(1), false),
+        entry(1, "abort", Some(2), false),
+        entry(2, "app::do_the_thing", Some(40), false),
+    ]));
+
+    assert_eq!(state.selected_frame(), Some(2), "the first frame that is ours");
+}
+
+#[test]
+fn a_crash_with_none_of_your_code_selects_nothing_rather_than_guessing() {
+    let mut state = AppState::new();
+    state.set_own_crates(vec!["app".into()]);
+    state.set_crash(a_report(vec![entry(0, "libc::abort", Some(1), false)]));
+    assert_eq!(state.selected_frame(), None);
+}
+
+#[test]
+fn a_frame_with_no_source_location_cannot_be_followed() {
+    // Selecting one would scroll the source pane to nothing.
+    let mut state = AppState::new();
+    state.set_own_crates(vec!["app".into()]);
+    state.set_crash(a_report(vec![
+        entry(0, "app::a", Some(10), false),
+        entry(1, "stripped_thing", None, false),
+    ]));
+
+    assert!(state.select_frame(0));
+    assert_eq!(state.selected_frame(), Some(0));
+    assert!(!state.select_frame(1), "a frame with no line is not selectable");
+    assert_eq!(state.selected_frame(), Some(0), "and the selection did not move");
+}
+
+#[test]
+fn selecting_a_frame_that_does_not_exist_is_refused() {
+    let mut state = AppState::new();
+    state.set_crash(a_report(vec![entry(0, "app::a", Some(10), false)]));
+    assert!(!state.select_frame(99));
+}
+
+#[test]
+fn learning_which_crates_are_yours_reselects_the_frame() {
+    // Discovery can arrive after a crash is loaded, and a pane still pointing
+    // at libc would be showing the wrong thing.
+    let mut state = AppState::new();
+    state.set_crash(a_report(vec![
+        entry(0, "libc::abort", Some(1), false),
+        entry(1, "app::main", Some(7), false),
+    ]));
+    assert_eq!(state.selected_frame(), None, "nothing is known to be ours yet");
+
+    state.set_own_crates(vec!["app".into()]);
+    assert_eq!(state.selected_frame(), Some(1));
+}
+
+#[test]
+fn inlined_entries_share_the_frame_they_were_inlined_into() {
+    // Counting them as separate frames would make the stack longer than it
+    // was; hiding them loses the frames a reader most wants.
+    let report = a_report(vec![
+        entry(0, "core::ptr::write_volatile", Some(1440), true),
+        entry(0, "app::null_write", Some(40), false),
+        entry(1, "app::main", Some(79), false),
+    ]);
+
+    assert_eq!(report.frame_count(), 2, "two physical frames");
+    assert_eq!(report.entries.len(), 3, "three entries");
+    assert_eq!(report.inlined_count(), 1);
+    assert!(report.describe().contains("inlined"), "{}", report.describe());
+}
+
+#[test]
+fn a_trustworthy_stack_carries_no_caveats() {
+    let report = a_report(vec![entry(0, "app::a", Some(1), false)]);
+    assert!(report.provenance.is_trustworthy());
+    assert!(report.provenance.caveats().is_empty());
+}
+
+#[test]
+fn an_unproven_binary_is_the_first_caveat() {
+    // A reader deciding whether to act on a stack needs this before reading
+    // it, not after.
+    let mut report = a_report(vec![entry(0, "app::a", Some(1), false)]);
+    report.provenance.binary_matches = false;
+    report.provenance.correspondence = "this binary may have been rebuilt".into();
+
+    assert!(!report.provenance.is_trustworthy());
+    let caveats = report.provenance.caveats();
+    assert_eq!(caveats[0], "this binary may have been rebuilt", "{caveats:?}");
+}
+
+#[test]
+fn an_incomplete_stack_and_a_poor_coverage_are_separate_caveats() {
+    // Several can apply at once, and joining them into prose buries the first.
+    let mut report = a_report(vec![
+        entry(0, "app::a", Some(1), false),
+        entry(1, "nothing", None, false),
+        entry(2, "nothing", None, false),
+    ]);
+    report.provenance.incomplete_because = Some("no unwind information".into());
+
+    let caveats = report.provenance.caveats();
+    assert!(caveats.len() >= 2, "{caveats:?}");
+    assert!(caveats.iter().any(|c| c.contains("incomplete")), "{caveats:?}");
+    assert!(caveats.iter().any(|c| c.contains("debug information")), "{caveats:?}");
+}
+
+#[test]
+fn a_frame_is_yours_only_when_it_is_in_one_of_your_crates() {
+    let own = vec!["app".into(), "app_core".to_string()];
+    assert!(entry(0, "app::main", Some(1), false).is_probably_yours(&own));
+    assert!(entry(0, "app_core::parse", Some(1), false).is_probably_yours(&own));
+    // A crate whose name merely starts the same is not yours.
+    assert!(!entry(0, "application_x::thing", Some(1), false).is_probably_yours(&own));
+    assert!(!entry(0, "std::rt::lang_start", Some(1), false).is_probably_yours(&own));
+    assert!(
+        !StackEntry { function: None, ..entry(0, "x", Some(1), false) }.is_probably_yours(&own)
+    );
+}

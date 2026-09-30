@@ -465,6 +465,9 @@ impl Binmap {
                 self.state.select_reasoner(&id);
             }
             Action::StartReasoning => return self.start_reasoning(cx),
+            Action::SelectFrame(index) => {
+                self.state.select_frame(index);
+            }
             Action::CloseDialogs => {
                 self.tier_dialog = false;
                 self.apply_dialog = None;
@@ -624,6 +627,11 @@ impl Render for Binmap {
                                 Some(View::Environment) => EnvironmentPanel::of(&self.state, theme)
                                     .dispatching(&dispatch)
                                     .into_any_element(),
+                                Some(View::Failure) => {
+                                    crate::views::stack::StackPane::of(&self.state, theme)
+                                        .dispatching(&dispatch)
+                                        .into_any_element()
+                                }
                                 Some(View::Agent) => {
                                     crate::views::agent::AgentPanel::of(&self.state, theme)
                                         .dispatching(&dispatch)
