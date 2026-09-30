@@ -517,3 +517,69 @@ fn the_agent_view_is_offered_whatever_the_target_can_do() {
     let views: Vec<View> = state.nav_entries().into_iter().map(|e| e.view).collect();
     assert!(views.contains(&View::Agent), "got {views:?}");
 }
+
+// --- crash analysis from the interface (`U2.1`) -----------------------------
+
+#[test]
+fn cores_found_near_the_project_are_offered_rather_than_asked_for() {
+    // N8: this is not a command-line tool, and a file dialog for something
+    // nearly always in one of three places is a worse answer than looking in
+    // those three places.
+    let engine = engine();
+    let mut state = opened(&engine);
+
+    // The scripted engine finds none, which is the honest default.
+    assert!(state.cores().is_empty());
+
+    state.set_cores(vec!["/x/core.1234".into(), "/x/cores/segv.core".into()]);
+    assert_eq!(state.cores().len(), 2);
+}
+
+#[test]
+fn analysing_a_crash_goes_through_the_facade_like_everything_else() {
+    // The pane does not read a core: §2.4 is that a view may not compute, and
+    // unwinding a stack is computing.
+    let engine = engine();
+    let sink: Arc<dyn EventSink> = Arc::new(|_: EngineEvent| {});
+
+    engine
+        .start(
+            Request::AnalyseCrash { target: "app::app".into(), core: "/x/segv.core".into() },
+            sink,
+        )
+        .expect("the scripted engine accepts it");
+
+    let started = engine.started.lock().unwrap();
+    match started.last().expect("a run was requested") {
+        Request::AnalyseCrash { target, core } => {
+            assert_eq!(target, "app::app");
+            assert_eq!(core.to_string_lossy(), "/x/segv.core");
+        }
+        other => panic!("expected AnalyseCrash, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_binary_target_offers_the_failure_view_now_that_phase_two_has_landed() {
+    // The Stack Pane was built, tested, and unreachable: `capabilities_for`
+    // never granted CrashAnalysis, so the nav rail never offered the view and
+    // nothing could open it. A capability that lags the code that implements
+    // it is the same "wired to nothing" failure as a library nobody calls.
+    let engine = ScriptedEngine::new()
+        .with_target("app::app", &[Capability::ConfigurationSweep, Capability::CrashAnalysis]);
+    let state = opened(&engine);
+
+    let views: Vec<View> = state.nav_entries().into_iter().map(|entry| entry.view).collect();
+    assert!(views.contains(&View::Failure), "got {views:?}");
+}
+
+#[test]
+fn a_target_that_cannot_crash_does_not_offer_the_view() {
+    // The complement: an rlib does not run, so there is no core to analyse
+    // and the entry is absent rather than present and empty.
+    let engine = ScriptedEngine::new().with_target("lib::lib", &[Capability::ConfigurationSweep]);
+    let state = opened(&engine);
+
+    let views: Vec<View> = state.nav_entries().into_iter().map(|entry| entry.view).collect();
+    assert!(!views.contains(&View::Failure), "got {views:?}");
+}

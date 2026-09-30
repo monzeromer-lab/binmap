@@ -128,6 +128,7 @@ impl Binmap {
         // read from a table here, because §2.4 forbids this crate depending on
         // the crate that holds one.
         state.set_reasoners(engine.reasoners());
+        state.set_cores(engine.cores());
         state.select_view(View::Target);
 
         // Whatever the last session on this target measured. A tool that
@@ -301,6 +302,32 @@ impl Binmap {
         cx.notify();
     }
 
+    /// Analyse a core dump against the selected target (`U2.1`).
+    pub fn analyse_crash(&mut self, core: std::path::PathBuf, cx: &mut Context<Self>) {
+        let Some(target) = self.state.selected_target().map(|t| t.id.clone()) else {
+            return;
+        };
+        let sink: Arc<dyn EventSink> = Arc::new(ChannelSink(self.sender.clone()));
+        match self.engine.start(Request::AnalyseCrash { target, core }, sink) {
+            Ok(run) => self.active = Some(run),
+            Err(error) => {
+                // A core that cannot be read says so rather than leaving an
+                // empty pane.
+                self.state.apply(EngineEvent::Failed {
+                    run: RunId("crash".into()),
+                    error: error.to_string(),
+                });
+            }
+        }
+        // The analysis finishes synchronously, so the report is available as
+        // soon as `start` returns.
+        if let Some(report) = self.engine.crash() {
+            self.state.set_crash(report);
+            self.state.select_view(View::Failure);
+        }
+        cx.notify();
+    }
+
     /// Cancel the run in flight, keeping everything it has measured.
     pub fn cancel(&mut self, cx: &mut Context<Self>) {
         if let Some((_, cancellation)) = &self.active {
@@ -468,6 +495,7 @@ impl Binmap {
             Action::SelectFrame(index) => {
                 self.state.select_frame(index);
             }
+            Action::AnalyseCrash(core) => return self.analyse_crash(core, cx),
             Action::CloseDialogs => {
                 self.tier_dialog = false;
                 self.apply_dialog = None;

@@ -153,6 +153,8 @@ pub struct AppState {
     /// The crates the user wrote. There is no marker in a symbol name for it,
     /// so "your code" has to be told rather than inferred.
     own_crates: Vec<String>,
+    /// Core dumps found near the project, for the Stack Pane to offer.
+    cores: Vec<std::path::PathBuf>,
 }
 
 impl AppState {
@@ -284,6 +286,15 @@ impl AppState {
     }
 
     // -- the crash (`U2.1`) ------------------------------------------------
+
+    /// Core dumps the engine found near the project.
+    pub fn cores(&self) -> &[std::path::PathBuf] {
+        &self.cores
+    }
+
+    pub fn set_cores(&mut self, cores: Vec<std::path::PathBuf>) {
+        self.cores = cores;
+    }
 
     pub fn crash_report(&self) -> Option<&CrashReport> {
         self.crash.as_ref()
@@ -597,6 +608,8 @@ pub enum Action {
     SetTier(binmap_core::config::TrustTier),
     /// `U2.2`: follow a stack frame in the source pane.
     SelectFrame(usize),
+    /// `U2.1`: analyse a core dump against the selected target.
+    AnalyseCrash(std::path::PathBuf),
     /// `U1.3`: choose a reasoner. Refused, with the reason kept, when the row
     /// cannot be used — the reason is already known, and finding out at the
     /// first model call would report a setup problem as a session failure.

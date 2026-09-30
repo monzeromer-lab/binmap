@@ -775,6 +775,7 @@ dependencies = [
  "binmap-agent",
  "binmap-binary",
  "binmap-core",
+ "binmap-crash",
  "binmap-measure",
  "binmap-session",
  "binmap-verify",

@@ -53,6 +53,8 @@ struct Inner {
     runs: Mutex<BTreeMap<RunId, SweepState>>,
     /// The most recent size attribution, for the Size Explorer to read.
     attribution: Mutex<Option<binmap_core::attribution::Attribution>>,
+    /// The most recent crash, for the Stack Pane to read.
+    crash: Mutex<Option<binmap_core::crash::CrashReport>>,
     next_run: AtomicU64,
     /// Where sessions live.
     ///
@@ -107,6 +109,7 @@ impl BinmapEngine {
                 proposals: Mutex::new(Vec::new()),
                 runs: Mutex::new(BTreeMap::new()),
                 attribution: Mutex::new(None),
+                crash: Mutex::new(None),
                 next_run: AtomicU64::new(0),
                 sessions,
             }),
@@ -310,6 +313,84 @@ impl Inner {
     /// Whether this project permits a cloud model (`DESIGN-AI §6.3`).
     fn allow_cloud_models(&self) -> bool {
         self.config.read().expect("config poisoned").allow_cloud_models
+    }
+
+    /// Analyse a core dump against a target's binary (`F2.1`–`F2.8`).
+    ///
+    /// Refuses before symbolizing rather than after: a binary that did not
+    /// produce this core yields a stack of real-looking symbols at
+    /// real-looking lines, every one of them wrong, and nothing in the output
+    /// would say so.
+    fn analyse_crash(
+        &self,
+        target: &Target,
+        core: &std::path::Path,
+    ) -> Result<binmap_core::crash::CrashReport> {
+        use binmap_crash::{CoreDump, bias, classify, correspondence, modules, symbolize, unwind};
+
+        let artifact = self
+            .builder
+            .build(target, &BuildConfiguration::default_release())?
+            .artifact
+            .ok_or_else(|| {
+                Error::Other(format!("{} did not produce a binary to compare against", target.name))
+            })?;
+
+        let core_data = std::fs::read(core).map_err(|source| Error::io(core, source))?;
+        let binary = std::fs::read(&artifact).map_err(|source| Error::io(&artifact, source))?;
+
+        let dump = CoreDump::parse(&core_data)?;
+        let thread = dump.crashing_thread();
+        let path = artifact.display().to_string();
+
+        let verdict = correspondence::verify(&dump, &core_data, &binary, &path)?;
+        if !verdict.permits_symbolization() {
+            return Err(Error::Other(verdict.describe()));
+        }
+        let derived = bias::derive(&dump, &binary)?;
+
+        let name =
+            artifact.file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_default();
+        let loaded = modules::Modules::load(&dump, Some((&name, &binary)));
+        let stack = unwind::walk(
+            &binmap_crash::memory::CoreMemory { dump: &dump, data: &core_data },
+            &loaded,
+            &thread.registers,
+        )?;
+
+        // One symbolizer per module, over every frame that landed in it.
+        let mut by_module: BTreeMap<&str, Vec<u64>> = BTreeMap::new();
+        for frame in &stack.frames {
+            if let Some((module, address)) = frame.module.as_deref().zip(frame.link_time_address) {
+                by_module.entry(module).or_default().push(address);
+            }
+        }
+        let symbolizers: BTreeMap<&str, symbolize::Symbolizer> = by_module
+            .iter()
+            .filter_map(|(module, addresses)| {
+                symbolize::Symbolizer::load(std::path::Path::new(module), addresses)
+                    .ok()
+                    .map(|symbolizer| (*module, symbolizer))
+            })
+            .collect();
+
+        let resolved: Vec<symbolize::Resolved> = stack
+            .frames
+            .iter()
+            .map(|frame| {
+                frame
+                    .module
+                    .as_deref()
+                    .zip(frame.link_time_address)
+                    .and_then(|(module, address)| {
+                        symbolizers.get(module).map(|symbolizer| symbolizer.resolve(address))
+                    })
+                    .unwrap_or_default()
+            })
+            .collect();
+
+        let crash = classify::classify(&dump, thread, &resolved);
+        Ok(binmap_crash::report::assemble(thread, &stack, &resolved, &crash, &verdict, &derived))
     }
 
     /// Drive one reasoning session, relaying its transcript as it goes
@@ -798,6 +879,23 @@ impl Engine for BinmapEngine {
             // on: orchestration reaches the model layer, and the model layer
             // never reaches back. The interface asked a question; what answers
             // it is decided here.
+            // A crash is analysed rather than swept: it is one read of a file
+            // the user already has, and it finishes in well under a second on
+            // anything but an enormous core.
+            Request::AnalyseCrash { target, core } => {
+                let target = self.inner.target_by_id(&target)?;
+                let run = RunId(format!("crash-{}", target.id.replace("::", "-")));
+                match self.inner.analyse_crash(&target, &core) {
+                    Ok(report) => {
+                        let summary = format!("{} · {}", report.title, report.describe());
+                        *self.inner.crash.lock().expect("crash poisoned") = Some(report);
+                        events.emit(EngineEvent::Finished { run: run.clone(), summary });
+                    }
+                    Err(error) => events
+                        .emit(EngineEvent::Failed { run: run.clone(), error: error.to_string() }),
+                }
+                return Ok((run, cancellation));
+            }
             Request::Reason { target, question, reasoner } => {
                 let target = self.inner.target_by_id(&target)?;
                 let run = RunId(format!("reason-{}", target.id.replace("::", "-")));
@@ -901,6 +999,39 @@ impl Engine for BinmapEngine {
     /// `allow_cloud` comes from the project's own configuration, because `§6.3`
     /// lets a project forbid sending its code off the machine and that
     /// decision belongs to the project rather than to the picker.
+    fn cores(&self) -> Vec<std::path::PathBuf> {
+        let root = self.inner.config.read().expect("config poisoned").root.clone();
+        // The three places a core actually is: beside the project, in a
+        // `cores/` directory someone made, or under the target directory
+        // where a test harness dropped it. Not a recursive walk — a project
+        // with a large `target/` would take seconds to search and find
+        // nothing.
+        let mut found = Vec::new();
+        for directory in [root.clone(), root.join("cores"), root.join("target")] {
+            let Ok(entries) = std::fs::read_dir(&directory) else { continue };
+            found.extend(
+                entries
+                    .filter_map(|entry| entry.ok())
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_file())
+                    .filter(|path| {
+                        let name = path.file_name().unwrap_or_default().to_string_lossy();
+                        // `core`, `core.1234`, and anything ending `.core`,
+                        // which covers what the kernel writes and what gdb's
+                        // `generate-core-file` produces.
+                        name == "core" || name.starts_with("core.") || name.ends_with(".core")
+                    }),
+            );
+        }
+        found.sort();
+        found.dedup();
+        found
+    }
+
+    fn crash(&self) -> Option<binmap_core::crash::CrashReport> {
+        self.inner.crash.lock().expect("crash poisoned").clone()
+    }
+
     fn reasoners(&self) -> Vec<binmap_core::reasoner::Reasoner> {
         binmap_agent::provider::reasoners(self.inner.allow_cloud_models())
     }

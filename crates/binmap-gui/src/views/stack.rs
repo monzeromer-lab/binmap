@@ -30,6 +30,8 @@ use gpui_kit::{App, SharedString, Window, div, px};
 #[derive(IntoElement)]
 pub struct StackPane {
     report: Option<CrashReport>,
+    /// Core dumps found near the project, offered rather than asked for.
+    cores: Vec<std::path::PathBuf>,
     /// The crates the user wrote, so "your code" can be told from a
     /// dependency. There is no marker in a symbol name for it.
     own: Vec<String>,
@@ -42,6 +44,7 @@ impl StackPane {
     pub fn of(state: &AppState, theme: Theme) -> Self {
         Self {
             report: state.crash_report().cloned(),
+            cores: state.cores().to_vec(),
             own: state.own_crates(),
             selected: state.selected_frame(),
             theme,
@@ -62,19 +65,73 @@ impl RenderOnce for StackPane {
         let dispatch = self.dispatch;
 
         let Some(report) = self.report else {
+            let cores = self.cores.clone();
+            let found = !cores.is_empty();
             return div()
                 .flex()
                 .flex_col()
                 .size_full()
                 .p(space::S16)
                 .gap(space::S8)
+                .overflow_hidden()
                 .child(div().text_size(type_scale::FS_18).text_color(c.text_primary).child("Stack"))
-                .child(div().text_size(type_scale::FS_11).text_color(c.text_muted).child(
-                    "No crash loaded. Open a core dump beside the binary that produced it — \
-                         a core from a different build produces a stack that is entirely \
-                         plausible and entirely wrong, so the two are checked before anything is \
-                         shown.",
-                ))
+                .child(
+                    div().flex_none().text_size(type_scale::FS_11).text_color(c.text_muted).child(
+                        if found {
+                            "A core is only meaningful beside the binary that produced it. These \
+                             are checked against this project's own build before anything is \
+                             shown, because a core from a different build gives a stack that is \
+                             entirely plausible and entirely wrong."
+                        } else {
+                            "No core dumps found beside this project, in `cores/`, or under \
+                             `target/`. A core from a different build gives a stack that is \
+                             entirely plausible and entirely wrong, so one is checked against \
+                             this project's binary before anything is shown."
+                        },
+                    ),
+                )
+                .when(found, |d| {
+                    d.child(Section::titled("Core dumps here", theme).flush().child(
+                        div().flex().flex_col().children(cores.into_iter().map(move |core| {
+                            let dispatch = std::rc::Rc::clone(&dispatch);
+                            let shown = core.display().to_string();
+                            let size = std::fs::metadata(&core)
+                                .map(|metadata| metadata.len())
+                                .unwrap_or(0);
+                            clickable(
+                                div().id(SharedString::from(shown.clone())),
+                                &dispatch,
+                                Action::AnalyseCrash(core),
+                            )
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap(space::S8)
+                            .flex_none()
+                            .px(space::S12)
+                            .py(space::S6)
+                            .border_b_1()
+                            .border_color(c.border_subtle)
+                            .hover(|d| d.bg(c.surface_hover))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .font_family("JetBrains Mono")
+                                    .text_size(type_scale::FS_11)
+                                    .text_color(c.text_body)
+                                    .child(SharedString::from(shown)),
+                            )
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_size(type_scale::FS_11)
+                                    .text_color(c.text_muted)
+                                    .child(format!("{} KiB", size / 1024)),
+                            )
+                        })),
+                    ))
+                })
                 .into_any_element();
         };
 

@@ -234,6 +234,12 @@ pub enum Request {
     /// Write a verified proposal into the working tree. Requires
     /// [`TrustTier::Tune`](crate::config::TrustTier::Tune).
     Apply { proposal: String },
+    /// Analyse a core dump against a target's binary (`F2.1`–`F2.8`).
+    ///
+    /// The binary is the target's own build rather than a path the user
+    /// supplies: a core is only meaningful beside the binary that produced it,
+    /// and the correspondence check refuses the pair when they disagree.
+    AnalyseCrash { target: String, core: std::path::PathBuf },
     /// Ask the selected reasoner a question about a target (`A1.1`, `U1.3`).
     ///
     /// The engine decides whether a model is called at all: `§2.4` is that the
@@ -283,6 +289,25 @@ pub trait Engine: Send + Sync {
     /// the default rather than an error.
     fn reasoners(&self) -> Vec<crate::reasoner::Reasoner> {
         vec![crate::reasoner::Reasoner::none()]
+    }
+
+    /// Core dumps found near the project.
+    ///
+    /// Discovered rather than asked for, which is how this product finds
+    /// everything else: `N8` says it is not a command-line tool, and a file
+    /// dialog for something that is nearly always in one of three places is a
+    /// worse answer than looking in those three places.
+    fn cores(&self) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
+
+    /// The crash most recently analysed, for the Stack Pane to render.
+    ///
+    /// `None` until one has been. Returned rather than pushed through an event
+    /// because a pane that opens after the analysis finished still needs it —
+    /// the same reason `findings` and `attribution` are here.
+    fn crash(&self) -> Option<crate::crash::CrashReport> {
+        None
     }
 
     /// Read back what a previous session on this target measured.

@@ -109,6 +109,22 @@ fn capabilities_for(kind: &TargetKind, wasm: bool) -> Capabilities {
     if matches!(kind, TargetKind::Bin | TargetKind::CDyLib | TargetKind::StaticLib) {
         found.push(Capability::SizeAttribution);
         found.push(Capability::Monomorphization);
+        // DWARF maps its addresses to source, which is the same lookup crash
+        // analysis and the profiler both go through.
+        found.push(Capability::SourceMapping);
+    }
+
+    // Only a binary can produce a core dump: a library does not run, and
+    // attaching a profiler to one is attaching it to whatever loaded it.
+    //
+    // Claimed on the *target*, not on the machine. Whether this machine can
+    // capture a core or read performance counters is a question for the
+    // environment probe, and conflating the two made "this target cannot be
+    // analysed" indistinguishable from "this computer is not set up for it".
+    if matches!(kind, TargetKind::Bin) {
+        found.push(Capability::CrashAnalysis);
+        found.push(Capability::PerformanceAttribution);
+        found.push(Capability::ReplayDebugging);
     }
 
     found.into_iter().collect()
@@ -354,24 +370,68 @@ mod tests {
     #[test]
     fn nothing_claims_a_capability_this_build_has_not_shipped() {
         // A capability declared for a phase that has not landed puts an entry
-        // in the nav rail that opens on nothing.
+        // in the nav rail that opens on nothing. The list shrinks as phases
+        // land, and shrinking it is part of landing one — the Stack Pane was
+        // built, tested and unreachable because this had not been updated.
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
         let runner = ToolRunner::new(EvidenceStore::new(), root);
         let (_, targets) = discover(&runner, root).unwrap();
         for target in targets {
             for unshipped in [
-                Capability::CrashAnalysis,
+                // Phase 2 built the rest of the native backend, but nothing
+                // disassembles yet: `F2.5`'s recovery of optimised-out values
+                // through the instruction stream is the one piece of Phase 2
+                // that is not here.
                 Capability::Disassembly,
-                Capability::PerformanceAttribution,
-                Capability::ReplayDebugging,
+                // Phase 3's web half. A V8 profile is read, but load-time
+                // phases are not measured.
+                Capability::LoadTime,
             ] {
                 assert!(
                     !target.capabilities.has(unshipped),
-                    "{} claims {unshipped}, which Phase 0 has not built",
+                    "{} claims {unshipped}, which this build has not shipped",
                     target.id
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_binary_can_be_crashed_profiled_and_replayed_and_a_library_cannot() {
+        // Only a binary produces a core dump or a profile: a library does not
+        // run, and attaching to one is attaching to whatever loaded it.
+        let binary = capabilities_for(&TargetKind::Bin, false);
+        for available in [
+            Capability::CrashAnalysis,
+            Capability::PerformanceAttribution,
+            Capability::ReplayDebugging,
+        ] {
+            assert!(binary.has(available), "a binary should offer {available}");
+        }
+
+        let library = capabilities_for(&TargetKind::RLib, false);
+        for unavailable in [
+            Capability::CrashAnalysis,
+            Capability::PerformanceAttribution,
+            Capability::ReplayDebugging,
+        ] {
+            assert!(!library.has(unavailable), "an rlib should not offer {unavailable}");
+        }
+    }
+
+    #[test]
+    fn a_capability_is_about_the_target_not_about_this_machine() {
+        // Whether this computer can capture a core or read performance
+        // counters is the environment probe's question. Conflating the two
+        // made "this target cannot be analysed" indistinguishable from "this
+        // computer is not set up for it", which sends the reader to fix the
+        // wrong thing.
+        let binary = capabilities_for(&TargetKind::Bin, false);
+        assert!(
+            binary.has(Capability::ReplayDebugging),
+            "rr is not installed on the machine running this test, and that is not the \
+             target's problem"
+        );
     }
 
     #[test]

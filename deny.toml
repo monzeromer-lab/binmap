@@ -44,13 +44,17 @@ wrappers = ["binmap-build", "binmap-crash", "binmap-eval"]
 # interface may not reach it: the Stack Pane renders frames whose *shape* the
 # interface knows, and symbolizing one is not something a view may do.
 #
+# binmap-build reaches it because orchestration is what turns a
+# `Request::AnalyseCrash` into a report — the same direction §2.4 requires
+# everywhere, with the interface asking and orchestration deciding how.
+#
 # It reaches binmap-binary because a core is only meaningful beside the binary
 # that produced it — the symbol table and the line table are the same ones
 # `F1.6` already reads, and a second copy of that lookup would drift from the
 # first.
 [[bans.deny]]
 name = "binmap-crash"
-wrappers = ["binmap-eval", "binmap-perf"]
+wrappers = ["binmap-build", "binmap-eval", "binmap-perf"]
 
 # binmap-perf attributes samples. It reaches binmap-crash because `F3.2` says
 # samples go "through the same symbolization layer the crash analyzer uses" —
