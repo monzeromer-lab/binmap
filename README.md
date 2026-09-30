@@ -9,13 +9,27 @@ lto, codegen-units, panic, strip, overflow-checks — measures size, runtime and
 build time for each, verifies every one against your own tests, and derives the
 Pareto frontier over what it measured.
 
-**Status: Phase 1.** Configuration sweeps, the application shell, and size
-attribution — where the bytes went, which generic they came from, and what
-category of cost they are. Crash analysis, performance attribution and replay
-debugging are later phases; see
-[the implementation plan](docs/Binmap%20implementation%20plan.md). The model
-layer is a null backend: the tool registry, the evidence store and the finding
-gate exist, and nothing calls a model.
+**Status: Phase 1, passing its acceptance criterion.** Configuration sweeps,
+the application shell, and size attribution — where the bytes went, which
+generic they came from, what category of cost it is, and what could be done
+about it. Crash analysis, performance attribution and replay debugging are
+later phases; see
+[the implementation plan](docs/Binmap%20implementation%20plan.md).
+
+The model layer is real but optional. A reasoning loop drives any
+OpenAI-compatible provider, including a local runner, and it will not run a
+tool until the model has said what it believes and what would refute it.
+Claude's own wire shape arrives in Phase 1.5; until then the picker says so
+rather than failing at the first call. **Every analysis works with no model at
+all**, which is why "None" is listed in the reasoner picker beside the others
+rather than hidden in settings — and why the entire test suite runs on the null
+backend.
+
+Phase 1's criterion is measured rather than asserted, on every CI run:
+
+```
+cargo run --release -p binmap-eval -- acceptance1 corpus/stress
+```
 
 ## What it will not do
 
