@@ -143,6 +143,13 @@ jobs:
       - name: Crash analysis tests
         run: cargo test --release -p binmap-crash
 
+      # Phase 2's own criterion, over twenty crashes whose ground truth is the
+      # `// site:` marker beside each fault. The table the harness reads is
+      # generated from those markers, so a stale expectation fails rather than
+      # passing quietly.
+      - name: Phase 2 acceptance criterion
+        run: cargo run --release -p binmap-eval -- acceptance2
+
   web:
     name: Phase 1.5 — the web backend
     runs-on: ubuntu-latest

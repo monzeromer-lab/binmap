@@ -215,9 +215,39 @@ impl SymbolTable {
     /// never `None`, so a wild pointer would be reported as being inside
     /// whichever function happened to be last in the table.
     pub fn containing(&self, address: u64) -> Option<&Symbol> {
-        self.symbols.iter().find(|symbol| {
+        if let Some(exact) = self.symbols.iter().find(|symbol| {
             symbol.size > 0 && (symbol.address..symbol.address + symbol.size).contains(&address)
-        })
+        }) {
+            return Some(exact);
+        }
+        self.nearest_before(address)
+    }
+
+    /// The closest symbol at or below `address`, within a bound.
+    ///
+    /// The fallback for a symbol table that declares no size, which is most of
+    /// a stripped shared library: libc exports `__libc_start_main` with a size
+    /// and plenty of its internals without one, so an exact-containment lookup
+    /// alone left real frames unnamed.
+    ///
+    /// **Bounded, and that is the whole difference.** An unbounded
+    /// nearest-below never returns `None`, so a wild pointer is reported as
+    /// being inside whichever function happened to be last in the table — a
+    /// confident, wrong answer of exactly the kind this product exists to
+    /// avoid. A function larger than this bound exists; a frame more than this
+    /// far past the last symbol is far more likely to be a bad address.
+    pub fn nearest_before(&self, address: u64) -> Option<&Symbol> {
+        /// Generous for a function, mean for a wild pointer.
+        const BOUND: u64 = 64 * 1024;
+
+        self.symbols
+            .iter()
+            .filter(|symbol| symbol.address <= address && symbol.address > 0)
+            .filter(|symbol| address - symbol.address <= BOUND)
+            // Executable sections only: a code address inside `.rodata` is not
+            // a function, it is a misread.
+            .filter(|symbol| symbol.section == ".text" || symbol.section.starts_with(".text"))
+            .max_by_key(|symbol| symbol.address)
     }
 }
 

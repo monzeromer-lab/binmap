@@ -32,7 +32,24 @@ fn load(core: &str, binary: &str) -> Option<(Vec<u8>, Vec<u8>, PathBuf)> {
 }
 
 fn segv() -> Option<(Vec<u8>, Vec<u8>, PathBuf)> {
-    load("segv.core", "target/release/crasher")
+    load("null_write.core", "target/release/crasher")
+}
+
+/// The line a crash site should resolve to, read from the marker beside it.
+///
+/// Hardcoding a line number here went stale the first time the corpus grew a
+/// site above it, and the test then failed for a reason that had nothing to do
+/// with the unwinder. The source is the ground truth, so the source is what is
+/// read.
+fn expected_line(site: &str) -> u32 {
+    let source = std::fs::read_to_string(corpus().join("src/main.rs"))
+        .expect("the crasher's source is beside its cores");
+    source
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.contains(&format!("// site: {site}")))
+        .map(|(index, _)| index as u32 + 1)
+        .unwrap_or_else(|| panic!("no `// site: {site}` marker in the crasher"))
 }
 
 fn panic_core() -> Option<(Vec<u8>, Vec<u8>, PathBuf)> {
@@ -203,15 +220,15 @@ fn an_address_below_the_bias_is_refused_rather_than_wrapped() {
 
 #[test]
 fn the_faulting_frame_is_the_line_that_faulted() {
-    // Ground truth: gdb reports `crasher::null_write` at `src/main.rs:40`, and
-    // the source says so too.
+    // Ground truth is the `// site:` marker in the crasher's own source, which
+    // is also what gdb reports for this core.
     let Some((core_data, binary, path)) = segv() else { return };
     let analysed = analyse(&core_data, &binary, &path);
 
     let innermost = analysed.frames.first().expect("a frame");
     let physical = innermost.physical().expect("a resolved location");
     assert_eq!(physical.function.as_deref(), Some("crasher::null_write"), "{physical:?}");
-    assert_eq!(physical.line, Some(40));
+    assert_eq!(physical.line, Some(expected_line("null_write")));
     assert!(physical.file.as_deref().is_some_and(|file| file.ends_with("main.rs")));
 }
 
@@ -280,15 +297,23 @@ fn a_panic_unwinds_through_libc_into_the_users_own_code() {
 
 #[test]
 fn recursion_appears_once_per_call() {
-    // `explicit_panic(3)` recurses three times, so the frame appears three
-    // times. An unwinder that lost the repetition or invented extra copies
-    // would be wrong in a way that looks plausible.
+    // `explicit_panic(3)` calls itself at depths 3, 2, 1 and 0, so the frame
+    // appears *four* times — the initial call plus three recursions. The
+    // first version of this asserted three and passed against a different
+    // build, which is the kind of off-by-one that a stack trace makes look
+    // completely reasonable. An unwinder that lost the repetition, or
+    // invented extra copies, would be wrong in exactly the same plausible way.
+    //
+    // This one rather than the `deep_recursion` site, which LLVM turns into a
+    // loop whatever shape it is written in. `explicit_panic` returns `!`,
+    // which defeats the tail-recursion pass and leaves real frames on the
+    // stack.
     let Some((core_data, binary, path)) = panic_core() else { return };
     let analysed = analyse(&core_data, &binary, &path);
 
     let recursions =
         functions(&analysed.frames).iter().filter(|f| *f == "crasher::explicit_panic").count();
-    assert_eq!(recursions, 3, "the program recurses exactly three times");
+    assert_eq!(recursions, 4, "the initial call at depth 3, then 2, 1 and 0");
 }
 
 #[test]

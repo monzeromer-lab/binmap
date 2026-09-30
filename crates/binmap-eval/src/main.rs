@@ -77,11 +77,24 @@ enum Command {
     WebSweep(WebSweepOptions),
     /// Analyse a core dump against the binary that produced it (Phase 2).
     Crash(CrashOptions),
+    /// Measure Phase 2's acceptance criterion.
+    ///
+    /// Twenty crashes with known ground truth: the correct line in the top
+    /// three for at least 70%, and the deterministic layer symbolizing at
+    /// least 95% of frames.
+    Acceptance2(Acceptance2Options),
     /// Serve the tool registry over MCP on stdio (`A2.2`).
     ///
     /// This is what an external agent spawns. It speaks line-delimited
     /// JSON-RPC and never raises its own trust tier.
     Mcp(McpOptions),
+}
+
+#[derive(Args, Debug, Clone)]
+struct Acceptance2Options {
+    /// The crasher corpus, holding `cores/` and the built binary.
+    #[arg(default_value = "corpus/crasher")]
+    root: PathBuf,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -196,6 +209,7 @@ fn main() -> ExitCode {
         Command::WebSweep(options) => web_sweep(options),
         Command::Crash(options) => crash(options),
         Command::Mcp(options) => mcp(options),
+        Command::Acceptance2(options) => acceptance_phase_two(options),
     };
 
     match result {
@@ -1236,4 +1250,159 @@ fn mcp(options: &McpOptions) -> Result<bool, String> {
 
     mcp::serve(&mut server, &mut input, &mut output).map_err(|error| error.to_string())?;
     Ok(true)
+}
+
+/// Phase 2's acceptance criterion, measured rather than asserted.
+///
+/// > On 20 crashes with known ground truth the correct line is in the top
+/// > three for at least 70%, with the deterministic layer alone symbolizing at
+/// > least 95% of frames.
+///
+/// "Known ground truth" is the `// site:` marker beside each fault in
+/// `corpus/crasher`, and the table the harness reads is generated from those
+/// markers — so a stale expectation fails the criterion rather than passing
+/// quietly.
+fn acceptance_phase_two(options: &Acceptance2Options) -> Result<bool, String> {
+    use binmap_crash::{CoreDump, bias, classify, correspondence, modules, symbolize, unwind};
+
+    let binary_path = options.root.join("target/release/crasher");
+    let binary = std::fs::read(&binary_path).map_err(|error| {
+        format!(
+            "could not read {}: {error}. Run `corpus/crasher/capture.sh` first.",
+            binary_path.display()
+        )
+    })?;
+    let source = std::fs::read_to_string(options.root.join("src/main.rs"))
+        .map_err(|error| format!("could not read the crasher's source: {error}"))?;
+
+    // The expected line for each site, read out of the source's own markers.
+    let mut expected: Vec<(String, u32)> = Vec::new();
+    for (number, line) in source.lines().enumerate() {
+        if let Some(marker) = line.split("// site: ").nth(1) {
+            expected.push((marker.trim().to_string(), number as u32 + 1));
+        }
+    }
+    if expected.len() < 20 {
+        return Err(format!(
+            "the criterion needs twenty crashes with known ground truth; the corpus declares {}",
+            expected.len()
+        ));
+    }
+
+    let mut correct_in_top_three = 0usize;
+    let mut total_frames = 0usize;
+    let mut symbolized_frames = 0usize;
+    let mut examined = 0usize;
+
+    println!("{:<24} {:>6}  {:>8}  verdict", "site", "line", "found");
+    for (site, line) in &expected {
+        let core_path = options.root.join("cores").join(format!("{site}.core"));
+        let Ok(core_data) = std::fs::read(&core_path) else {
+            println!("{site:<24} {line:>6}  {:>8}  no core captured", "—");
+            continue;
+        };
+        examined += 1;
+
+        let dump = match CoreDump::parse(&core_data) {
+            Ok(dump) => dump,
+            Err(error) => {
+                println!("{site:<24} {line:>6}  {:>8}  {error}", "—");
+                continue;
+            }
+        };
+        let thread = dump.crashing_thread();
+
+        // Refusals first, as everywhere: a stack from an unverified binary is
+        // not evidence of anything.
+        let verdict =
+            correspondence::verify(&dump, &core_data, &binary, &binary_path.display().to_string())
+                .map_err(|error| error.to_string())?;
+        if !verdict.permits_symbolization() {
+            return Err(format!("{site}: {}", verdict.describe()));
+        }
+        let derived = bias::derive(&dump, &binary).map_err(|error| error.to_string())?;
+        let _ = derived;
+
+        let loaded = modules::Modules::load(&dump, Some(("crasher", &binary)));
+        let stack = unwind::walk(&dump, &core_data, &loaded, &thread.registers)
+            .map_err(|error| error.to_string())?;
+
+        let mut by_module: std::collections::BTreeMap<&str, Vec<u64>> = Default::default();
+        for frame in &stack.frames {
+            if let Some((module, address)) = frame.module.as_deref().zip(frame.link_time_address) {
+                by_module.entry(module).or_default().push(address);
+            }
+        }
+        let symbolizers: std::collections::BTreeMap<&str, symbolize::Symbolizer> = by_module
+            .iter()
+            .filter_map(|(module, addresses)| {
+                symbolize::Symbolizer::load(std::path::Path::new(module), addresses)
+                    .ok()
+                    .map(|symbolizer| (*module, symbolizer))
+            })
+            .collect();
+
+        let resolved: Vec<symbolize::Resolved> = stack
+            .frames
+            .iter()
+            .map(|frame| {
+                frame
+                    .module
+                    .as_deref()
+                    .zip(frame.link_time_address)
+                    .and_then(|(module, address)| {
+                        symbolizers.get(module).map(|symbolizer| symbolizer.resolve(address))
+                    })
+                    .unwrap_or_default()
+            })
+            .collect();
+
+        total_frames += stack.frames.len();
+        symbolized_frames += resolved.iter().filter(|frame| !frame.is_empty()).count();
+
+        // "In the top three": the three innermost *entries*, counting inlined
+        // ones, because that is what a reader looks at first.
+        let top: Vec<&symbolize::Location> =
+            resolved.iter().flat_map(|frame| frame.locations.iter()).take(3).collect();
+        let found = top.iter().any(|location| {
+            location.line == Some(*line)
+                && location.file.as_deref().is_some_and(|file| file.ends_with("main.rs"))
+        });
+        if found {
+            correct_in_top_three += 1;
+        }
+
+        let shown = top
+            .first()
+            .and_then(|location| location.line)
+            .map(|line| line.to_string())
+            .unwrap_or_else(|| "—".into());
+        // Classification is exercised too: a crash the layer cannot name is a
+        // crash a reader learns nothing from.
+        let crash = classify::classify(&dump, thread, &resolved);
+        println!(
+            "{site:<24} {line:>6}  {shown:>8}  {}  [{}]",
+            if found { "found" } else { "NOT in the top three" },
+            crash.title()
+        );
+    }
+
+    let line_rate = correct_in_top_three as f64 / examined.max(1) as f64;
+    let symbol_rate = symbolized_frames as f64 / total_frames.max(1) as f64;
+
+    println!("\nPhase 2 acceptance over {examined} crashes:");
+    println!(
+        "  {} the correct line is in the top three for {:.0}% (needs 70%)",
+        if line_rate >= 0.70 { "PASS" } else { "FAIL" },
+        line_rate * 100.0
+    );
+    println!(
+        "  {} the deterministic layer symbolized {:.0}% of frames (needs 95%)",
+        if symbol_rate >= 0.95 { "PASS" } else { "FAIL" },
+        symbol_rate * 100.0
+    );
+
+    let passed = examined >= 20 && line_rate >= 0.70 && symbol_rate >= 0.95;
+    println!("\n{}", if passed { "PASS" } else { "FAIL" });
+    Ok(passed)
 }

@@ -20,11 +20,21 @@ command -v gdb >/dev/null || { echo "gdb is required to capture cores" >&2; exit
 echo "building the crasher"
 cargo build --release
 
-# A genuine SIGSEGV: gdb stops at the fault, so the core is taken with the
-# faulting instruction still current.
-echo "capturing segv.core"
-gdb --batch -ex run -ex 'generate-core-file cores/segv.core' \
-    --args ./target/release/crasher segv >/dev/null 2>&1 || true
+# One core per crash site. Phase 2's acceptance criterion needs twenty crashes
+# with known ground truth, and the ground truth is the `// site:` marker beside
+# each fault — `SITES` in main.rs is generated from those markers, so it cannot
+# go stale.
+#
+# gdb stops at the fault, so each core is taken with the faulting instruction
+# still current.
+for site in $(grep -oP '^\s+\("\K[a-z_]+' src/main.rs); do
+  echo "capturing $site.core"
+  gdb --batch -ex run -ex "generate-core-file cores/$site.core" \
+      --args ./target/release/crasher "$site" >/dev/null 2>&1 || true
+done
+
+# The historical name, kept because the crash tests reference it.
+cp cores/null_write.core cores/segv.core 2>/dev/null || true
 
 # A panic unwinds and exits cleanly, so there is no process left to dump.
 # Built with `panic = "abort"` it raises SIGABRT instead, which gdb stops on —
