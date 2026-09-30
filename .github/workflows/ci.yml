@@ -52,7 +52,7 @@ jobs:
           command: check bans licenses advisories
 
   acceptance:
-    name: Phase 0 acceptance
+    name: Phase 0 and Phase 1 acceptance
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,3 +76,21 @@ jobs:
 
       - name: The gates reject what breaks the suite
         run: cargo test --release -p binmap-build --test corpus
+
+      # All three clauses of Phase 1's criterion, measured rather than
+      # asserted: the top generics are identified and genuinely collapsible, a
+      # configuration reduces size by 5% with its gates passing, and every
+      # finding cites evidence the session issued.
+      - name: Phase 1 acceptance criterion
+        run: cargo run --release -p binmap-eval -- acceptance1 corpus/stress --jobs 4
+
+      # The reasoner is reachable headlessly (A1.3). With no model configured
+      # this must refuse with a sentence and a non-zero exit, not sit there.
+      - name: The reasoner refuses honestly with no model
+        run: |
+          if cargo run --release -p binmap-eval -- reason corpus/stress; then
+            echo "a session with no reasoner should not have succeeded" && exit 1
+          fi
+
+      - name: The provider table is listable
+        run: cargo run --release -p binmap-eval -- reasoners corpus/stress

@@ -55,6 +55,12 @@ enum Command {
     Diff(DiffOptions),
     /// Measure the phase's acceptance criterion and exit non-zero if it fails.
     Acceptance(Options),
+    /// Measure Phase 1's acceptance criterion.
+    ///
+    /// Three clauses, all measured: the top generics by aggregate cost are
+    /// identified, a proposal reduces size by 5% with tests passing, and the
+    /// grounding rate is 1.0.
+    Acceptance1(Options),
     /// Drive one reasoning session headlessly and print its transcript
     /// (`A1.3`).
     ///
@@ -123,6 +129,7 @@ fn main() -> ExitCode {
         Command::Size(options) => size(options),
         Command::Diff(options) => diff(options),
         Command::Acceptance(options) => acceptance(options),
+        Command::Acceptance1(options) => acceptance_phase_one(options),
         Command::Reason(options) => reason(options),
         Command::Reasoners(options) => reasoners(options),
     };
@@ -587,6 +594,173 @@ fn reason(options: &ReasonOptions) -> Result<bool, String> {
         return Err(failure);
     }
     Ok(true)
+}
+
+/// Phase 1's acceptance criterion, measured rather than asserted.
+///
+/// "The top three generics by aggregate cost are identified correctly on a
+/// corpus crate with known bloat, at least one proposed patch reduces size by
+/// 5% or more with tests passing, and the grounding rate is 1.0."
+///
+/// Each clause prints what it measured before it prints a verdict, because a
+/// bare PASS is not evidence of anything.
+fn acceptance_phase_one(options: &Options) -> Result<bool, String> {
+    let engine = open(options)?;
+    let mut clauses: Vec<(&str, bool, String)> = Vec::new();
+
+    // --- 1. The top generics by aggregate cost -----------------------------
+    let targets = engine.targets().map_err(|error| error.to_string())?;
+    let attributable = targets
+        .iter()
+        .find(|target| target.capabilities.has(binmap_core::Capability::SizeAttribution));
+
+    match attributable {
+        Some(target) => {
+            let events = Arc::new(Printer::new());
+            engine
+                .start(Request::AttributeSize { target: target.id.clone() }, events.clone())
+                .map_err(|error| error.to_string())?;
+            events.wait();
+            if let Some(failure) = events.failure() {
+                return Err(failure);
+            }
+
+            let attribution = engine
+                .attribution()
+                .ok_or("the attribution finished without producing a result")?;
+
+            println!("\ntop generics by aggregate cost:");
+            for (rank, generic) in attribution.monomorphizations.iter().take(3).enumerate() {
+                println!(
+                    "  {}. {:<52} {:>8} over {:>3}  (collapsible {})",
+                    rank + 1,
+                    truncate(&generic.generic_path, 52),
+                    generic.total_bytes,
+                    generic.instantiations,
+                    generic.collapsible_bytes()
+                );
+                for candidate in binmap_binary::strategies_for(generic).iter().take(1) {
+                    println!(
+                        "     → {} ({})",
+                        candidate.strategy.label(),
+                        candidate.applicability.label()
+                    );
+                }
+            }
+
+            // "Identified correctly" is checked as a property rather than
+            // against a fixed list: the three largest must actually be the
+            // three largest, and each must be genuinely collapsible. A
+            // hardcoded expectation would go stale the first time the
+            // toolchain changed, and then be edited to match rather than
+            // investigated.
+            let top: Vec<&binmap_core::attribution::Monomorphization> =
+                attribution.monomorphizations.iter().take(3).collect();
+            let ordered = top.windows(2).all(|pair| pair[0].total_bytes >= pair[1].total_bytes);
+            let all_collapsible =
+                top.iter().all(|generic| generic.instantiations >= 2 && generic.total_bytes > 0);
+            let enough = top.len() == 3;
+
+            clauses.push((
+                "top three generics identified",
+                enough && ordered && all_collapsible,
+                format!(
+                    "{} found, ordered by cost: {ordered}, all genuinely collapsible: \
+                     {all_collapsible}",
+                    attribution.monomorphizations.len()
+                ),
+            ));
+        }
+        None => clauses.push((
+            "top three generics identified",
+            false,
+            "no target in this project can have its bytes attributed".into(),
+        )),
+    }
+
+    // --- 2. A proposal that reduces size with tests passing ----------------
+    let (state, _) = run_sweep(&engine, options)?;
+    match (state.baseline_bytes, best_passing(&state)) {
+        (Some(baseline), Some((bytes, measured))) => {
+            let reduction = (baseline as f64 - bytes as f64) / baseline as f64;
+            println!(
+                "\nbest passing configuration: {bytes} bytes against {baseline} \
+                 ({:.1}% smaller)",
+                reduction * 100.0
+            );
+            println!("  {}", measured.configuration.describe());
+            println!("  gates: {}", measured.report.summary());
+            clauses.push((
+                "a proposal reduces size by 5% with tests passing",
+                reduction >= 0.05,
+                format!("{:.1}% smaller, gates passed", reduction * 100.0),
+            ));
+        }
+        _ => clauses.push((
+            "a proposal reduces size by 5% with tests passing",
+            false,
+            "no configuration both built and passed its gates".into(),
+        )),
+    }
+
+    // --- 3. The grounding rate ---------------------------------------------
+    //
+    // A finding cannot exist without citing evidence this session issued —
+    // `Finding::new` refuses otherwise — so this measures a guarantee rather
+    // than a hope. Measured anyway, because a guarantee nobody checks is how
+    // one quietly stops holding.
+    let findings = engine.findings();
+    let grounded = findings
+        .iter()
+        .filter(|finding| {
+            !finding.evidence().is_empty()
+                && finding
+                    .evidence()
+                    .iter()
+                    .all(|evidence| engine.evidence_store().issued(evidence))
+        })
+        .count();
+    let rate = if findings.is_empty() { 1.0 } else { grounded as f64 / findings.len() as f64 };
+
+    println!(
+        "\ngrounding: {grounded} of {} findings cite evidence this session issued",
+        findings.len()
+    );
+    clauses.push((
+        "grounding rate is 1.0",
+        (rate - 1.0).abs() < f64::EPSILON,
+        format!("{rate:.3} over {} findings", findings.len()),
+    ));
+
+    // --- the verdict --------------------------------------------------------
+    println!("\nPhase 1 acceptance:");
+    for (clause, passed, detail) in &clauses {
+        println!("  {} {clause} — {detail}", if *passed { "PASS" } else { "FAIL" });
+    }
+
+    let all = clauses.iter().all(|(_, passed, _)| *passed);
+    println!("\n{}", if all { "PASS" } else { "FAIL" });
+    Ok(all)
+}
+
+/// The smallest configuration that built and passed every gate.
+fn best_passing(
+    state: &binmap_build::sweep::SweepState,
+) -> Option<(u64, &binmap_build::sweep::MeasuredConfiguration)> {
+    state
+        .measured
+        .iter()
+        .filter(|measured| measured.built && measured.report.passed())
+        .filter_map(|measured| measured.size_bytes.map(|bytes| (bytes, measured)))
+        .min_by_key(|(bytes, _)| *bytes)
+}
+
+fn truncate(text: &str, limit: usize) -> String {
+    if text.chars().count() <= limit {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(limit.saturating_sub(1)).collect();
+    format!("{kept}…")
 }
 
 #[cfg(test)]
