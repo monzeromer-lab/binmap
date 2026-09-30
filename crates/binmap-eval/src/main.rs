@@ -90,6 +90,11 @@ enum Command {
     Acceptance3(Acceptance3Options),
     /// Read a V8 CPU profile and map it back to TypeScript.
     V8(V8Options),
+    /// Report what this machine can and cannot do.
+    ///
+    /// Every backend's preflight in one place: `perf` for profiling, `rr` for
+    /// replay, and the exact command that fixes each.
+    Ready(Options),
     /// Serve the tool registry over MCP on stdio (`A2.2`).
     ///
     /// This is what an external agent spawns. It speaks line-delimited
@@ -242,6 +247,7 @@ fn main() -> ExitCode {
         Command::Acceptance2(options) => acceptance_phase_two(options),
         Command::Acceptance3(options) => acceptance_phase_three(options),
         Command::V8(options) => v8(options),
+        Command::Ready(options) => ready(options),
     };
 
     match result {
@@ -1640,5 +1646,34 @@ fn v8(options: &V8Options) -> Result<bool, String> {
     for hot in shown.iter().take(15) {
         println!("  {}", hot.describe(profile.total_samples));
     }
+    Ok(true)
+}
+
+/// What this machine can do, and the exact fix for what it cannot.
+///
+/// Both `F3.1` and `F4.1` ask for their constraints to be reported before a
+/// first failed attempt rather than after, and both failures are expensive:
+/// one wastes a capture, the other wastes a slow recording.
+fn ready(options: &Options) -> Result<bool, String> {
+    let _ = options;
+
+    println!("profiling:");
+    let sampling = binmap_perf::capture::readiness(None);
+    println!("  {}", sampling.describe().replace('\n', "\n  "));
+    println!(
+        "  binmap's own sampler needs none of this: it profiles a process it spawned, so it \
+         works at any perf_event_paranoid."
+    );
+
+    println!("\nreplay:");
+    let replay = binmap_replay::readiness();
+    println!("  {}", replay.describe().replace('\n', "\n  "));
+
+    // Not a failure: a machine that cannot record is a normal machine, and
+    // every other analysis in this product works on it.
+    println!(
+        "\nrecording is {}available on this machine.",
+        if replay.can_record() { "" } else { "not " }
+    );
     Ok(true)
 }

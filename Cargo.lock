@@ -838,6 +838,7 @@ dependencies = [
  "binmap-crash",
  "binmap-measure",
  "binmap-perf",
+ "binmap-replay",
  "binmap-session",
  "binmap-verify",
  "binmap-web",
@@ -879,6 +880,17 @@ dependencies = [
  "binmap-core",
  "binmap-crash",
  "object 0.40.0",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "binmap-replay"
+version = "0.1.0"
+dependencies = [
+ "binmap-core",
  "proptest",
  "serde",
  "serde_json",

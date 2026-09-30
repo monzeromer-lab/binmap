@@ -18,6 +18,7 @@ binmap-binary = { workspace = true }
 binmap-agent = { workspace = true }
 binmap-crash = { workspace = true }
 binmap-perf = { workspace = true }
+binmap-replay = { workspace = true }
 binmap-web = { workspace = true }
 sourcemap = { workspace = true }
 binmap-build = { workspace = true }

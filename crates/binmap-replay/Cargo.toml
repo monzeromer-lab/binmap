@@ -1,0 +1,17 @@
+[package]
+name = "binmap-replay"
+description = "Record and replay debugging: rr preflight and GDB/MI control"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+binmap-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = { workspace = true }

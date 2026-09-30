@@ -8,6 +8,7 @@ members = [
     "crates/binmap-crash",
     "crates/binmap-dotnet",
     "crates/binmap-perf",
+    "crates/binmap-replay",
     "crates/binmap-web",
     "crates/binmap-binary",
     "crates/binmap-build",
@@ -40,6 +41,7 @@ binmap-agent = { path = "crates/binmap-agent" }
 binmap-crash = { path = "crates/binmap-crash" }
 binmap-dotnet = { path = "crates/binmap-dotnet" }
 binmap-perf = { path = "crates/binmap-perf" }
+binmap-replay = { path = "crates/binmap-replay" }
 binmap-web = { path = "crates/binmap-web" }
 binmap-binary = { path = "crates/binmap-binary" }
 binmap-build = { path = "crates/binmap-build" }

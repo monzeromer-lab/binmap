@@ -66,6 +66,12 @@ wrappers = ["binmap-eval"]
 name = "binmap-dotnet"
 wrappers = ["binmap-eval"]
 
+# binmap-replay drives a debugger. The interface renders a timeline whose
+# shape it knows; controlling an rr replay is not something a view may do.
+[[bans.deny]]
+name = "binmap-replay"
+wrappers = ["binmap-eval"]
+
 # And now binmap-agent, which was waiting for a dependent. A `deny` entry with
 # no wrappers forbids a crate from the graph entirely, so this could not be
 # written while nothing called it; orchestration now does, and the ban is real.

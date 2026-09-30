@@ -171,6 +171,12 @@ jobs:
       - name: Performance attribution tests
         run: cargo test --release -p binmap-perf
 
+      # Both preflights report what the runner can and cannot do. Neither is
+      # allowed to fail: a machine that cannot record is a normal machine, and
+      # every other analysis works on it.
+      - name: The machine reports what it can do
+        run: cargo run --release -p binmap-eval -- ready corpus/stress
+
   web:
     name: Phase 1.5 — the web backend
     runs-on: ubuntu-latest
