@@ -9,12 +9,21 @@ lto, codegen-units, panic, strip, overflow-checks — measures size, runtime and
 build time for each, verifies every one against your own tests, and derives the
 Pareto frontier over what it measured.
 
-**Status: Phase 1, passing its acceptance criterion.** Configuration sweeps,
-the application shell, and size attribution — where the bytes went, which
-generic they came from, what category of cost it is, and what could be done
-about it. Crash analysis, performance attribution and replay debugging are
-later phases; see
-[the implementation plan](docs/Binmap%20implementation%20plan.md).
+**Status: Phase 1.5.** Two backends. For native Rust: configuration sweeps,
+size attribution — where the bytes went, which generic they came from, what
+category of cost it is, and what could be done about it. For JavaScript and
+TypeScript: source-map and bundler-metadata attribution, per-chunk sizes with
+the initial load marked, and a configuration sweep over the target level.
+Crash analysis, performance attribution and replay debugging are later phases;
+see [the implementation plan](docs/Binmap%20implementation%20plan.md).
+
+**On the web, size is three numbers.** Raw bytes are nearly irrelevant to a
+web user; what costs them latency is what crosses the network, and the two do
+not move together. On this repository's own corpus, code splitting removes 106
+raw bytes and *adds* 10 transfer bytes, because two chunks means two
+compression contexts. Every measurement records the gzip level and brotli
+quality that produced it, and the sweep names every configuration where the
+raw and transfer rankings disagree.
 
 The model layer is real but optional. A reasoning loop drives any
 OpenAI-compatible provider, including a local runner, and it will not run a
@@ -29,6 +38,13 @@ Phase 1's criterion is measured rather than asserted, on every CI run:
 
 ```
 cargo run --release -p binmap-eval -- acceptance1 corpus/stress
+```
+
+And the web backend runs against two corpus projects, one clean and one
+deliberately badly configured with real npm packages:
+
+```
+cargo run --release -p binmap-eval -- web corpus/web-heavy
 ```
 
 ## What it will not do
