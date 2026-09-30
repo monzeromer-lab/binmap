@@ -84,7 +84,7 @@ impl RenderOnce for EnvironmentPanel {
                             .child("Environment"),
                     )
                     .child(
-                        div().flex_1().text_size(type_scale::FS_12).text_color(c.text_muted).child(
+                        div().flex_1().min_w_0().text_size(type_scale::FS_12).text_color(c.text_muted).child(
                             "Checked when the project opens. Every check maps to a feature that \
                          would otherwise fail later, at a worse moment.",
                         ),

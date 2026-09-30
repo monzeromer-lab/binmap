@@ -129,14 +129,17 @@ impl RenderOnce for SizeExplorer {
                             .child("Size Explorer"),
                     )
                     .child(
-                        div().flex_1().text_size(type_scale::FS_12).text_color(c.text_muted).child(
-                            format!(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(type_scale::FS_12)
+                            .text_color(c.text_muted)
+                            .child(format!(
                                 "{} attributed across {} crates · {} is your code",
                                 human(attribution.attributed_bytes),
                                 attribution.crates.len(),
                                 human(yours)
-                            ),
-                        ),
+                            )),
                     )
                     // Where the numbers rest on inference, say so where it
                     // cannot be missed rather than in a footnote.
@@ -251,6 +254,7 @@ fn drivers(attribution: &Attribution, total: u64, theme: Theme) -> impl IntoElem
                         .child(
                             div()
                                 .flex_1()
+                                .min_w_0()
                                 .text_size(type_scale::FS_12)
                                 .text_color(c.text_body)
                                 .child(driver.label()),

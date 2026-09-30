@@ -134,13 +134,16 @@ impl RenderOnce for ProfileLab {
                             .child("Profile Lab"),
                     )
                     .child(
-                        div().flex_1().text_size(type_scale::FS_12).text_color(c.text_muted).child(
-                            format!(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(type_scale::FS_12)
+                            .text_color(c.text_muted)
+                            .child(format!(
                                 "{} configuration{} swept, {rejected} rejected",
                                 sweep.measured.len(),
                                 if sweep.measured.len() == 1 { "" } else { "s" }
-                            ),
-                        ),
+                            )),
                     )
                     .when(!sweep.complete, |d| {
                         d.child(Badge::new("running", Tone::Accent, theme).caps())
@@ -433,6 +436,9 @@ fn legend(
             .child(
                 div()
                     .flex_1()
+                    // Shrinkable, or the label pushes the note beside it off
+                    // the edge rather than truncating.
+                    .min_w_0()
                     .text_size(type_scale::FS_11)
                     .text_color(c.text_secondary)
                     .child(label),

@@ -96,6 +96,7 @@ impl RenderOnce for Palette {
                         .child(
                             div()
                                 .flex_1()
+                                .min_w_0()
                                 .text_size(type_scale::FS_14)
                                 .text_color(if self.query.is_empty() {
                                     c.text_muted
@@ -165,6 +166,7 @@ impl RenderOnce for Palette {
                                     .child(
                                         div()
                                             .flex_1()
+                                            .min_w_0()
                                             .text_size(type_scale::FS_13)
                                             .text_color(c.text_body)
                                             .child(command.label.clone()),
@@ -274,6 +276,7 @@ impl RenderOnce for TierDialog {
                                 .child(
                                     div()
                                         .flex_1()
+                                        .min_w_0()
                                         .text_size(type_scale::FS_13)
                                         .text_color(c.text_primary)
                                         .child(tier.label()),

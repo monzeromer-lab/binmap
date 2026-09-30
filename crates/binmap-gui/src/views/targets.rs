@@ -245,6 +245,12 @@ impl RenderOnce for TargetView {
                                 .child(
                                     div()
                                         .flex_1()
+                                        // Without this a flex item will not
+                                        // shrink below its content, so a long
+                                        // capability sentence pushes whatever
+                                        // is beside it off the edge — where
+                                        // `overflow_hidden` eats it silently.
+                                        .min_w_0()
                                         .text_size(type_scale::FS_12)
                                         .text_color(c.text_muted)
                                         .child(format!(
