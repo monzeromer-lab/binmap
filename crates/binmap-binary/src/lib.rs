@@ -4,12 +4,14 @@
 //! traits in `binmap-core`, and this is the native implementation of them.
 
 pub mod attribution;
+pub mod collapse;
 pub mod diff;
 pub mod source;
 pub mod symbols;
 
 pub use attribution::attribute;
 pub use binmap_core::attribution::{Attribution, Driver, Group, Monomorphization};
+pub use collapse::{Applicability, Candidate, Strategy, strategies_for};
 pub use diff::{Change, SizeDiff, diff};
 pub use source::{InlinedFrame, SourceMap, SourceOrigin};
 pub use symbols::{Mangling, Sizing, Symbol, SymbolTable};

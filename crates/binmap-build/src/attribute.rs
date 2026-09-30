@@ -229,9 +229,10 @@ impl SizeAnalysis<'_> {
                 "Collapsing every instantiation to one would save at most {} — the largest has \
                  to stay. An upper bound: collapsing usually costs an indirection, and two \
                  instantiations that differ only in a type parameter may still differ in what \
-                 the optimiser did to them. Arguments seen: {}.",
+                 the optimiser did to them. Arguments seen: {}.{}",
                 human(saving),
-                arguments.join(", ")
+                arguments.join(", "),
+                advice(monomorphization)
             ))
             .at(Location::symbol(monomorphization.generic_path.clone()))
             .impact(Impact::size(-(saving as i64)))
@@ -250,6 +251,25 @@ impl SizeAnalysis<'_> {
     }
 }
 
+/// What could be done about a generic, appended to its finding (`A1.5`).
+///
+/// The strategies are a named catalogue rather than a model's suggestion, so
+/// they stay `Derived` alongside the measurement they came from. Only the best
+/// one is shown: a finding listing four possibilities is a finding that has
+/// decided nothing, and the rest are a keystroke away in the Inspector.
+fn advice(monomorphization: &binmap_core::attribution::Monomorphization) -> String {
+    let Some(best) = binmap_binary::strategies_for(monomorphization).into_iter().next() else {
+        return String::new();
+    };
+    format!(
+        " Worth trying: {} ({}) — {} {}",
+        best.strategy.label(),
+        best.applicability.label(),
+        best.because,
+        best.strategy.cost()
+    )
+}
+
 fn human(bytes: u64) -> String {
     const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
     let mut amount = bytes as f64;
@@ -259,4 +279,48 @@ fn human(bytes: u64) -> String {
         unit += 1;
     }
     if unit == 0 { format!("{bytes} B") } else { format!("{amount:.1} {}", UNITS[unit]) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use binmap_core::attribution::Monomorphization;
+
+    fn generic(instantiations: u32, arguments: &[(&str, u64)]) -> Monomorphization {
+        Monomorphization {
+            generic_path: "core::ptr::drop_glue".into(),
+            total_bytes: arguments.iter().map(|(_, bytes)| bytes).sum(),
+            instantiations,
+            arguments: arguments.iter().map(|(a, b)| ((*a).to_string(), *b)).collect(),
+        }
+    }
+
+    #[test]
+    fn a_generic_worth_collapsing_carries_advice_into_its_finding() {
+        // The catalogue is only useful if it reaches the finding. It is easy
+        // for a strategy layer to exist, be tested, and be wired to nothing.
+        let costly = generic(6, &[("String", 9_000), ("&str", 8_000), ("PathBuf", 7_000)]);
+        let advice = advice(&costly);
+
+        assert!(!advice.is_empty(), "a collapsible generic should carry advice");
+        assert!(advice.contains("Worth trying"), "{advice}");
+        // And it must state the cost, not only the saving.
+        assert!(advice.contains("callers are untouched"), "the trade is stated: {advice}");
+    }
+
+    #[test]
+    fn a_generic_not_worth_collapsing_carries_none() {
+        // Appending "no strategy applies" to every small finding is noise.
+        let tiny = generic(3, &[("u8", 200), ("u16", 180), ("u32", 160)]);
+        assert_eq!(advice(&tiny), "", "nothing worth saying is said as nothing");
+    }
+
+    #[test]
+    fn the_advice_names_how_confident_it_is() {
+        // The symbol table cannot see a signature, and advice that hid that
+        // would be advice presented as more certain than it is.
+        let handles = generic(4, &[("&str", 9_000), ("&Path", 8_000), ("&[u8]", 7_000)]);
+        let advice = advice(&handles);
+        assert!(advice.contains("likely") || advice.contains("check the signature"), "{advice}");
+    }
 }
