@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+agent-client-protocol-schema = { workspace = true }
 binmap-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -15,3 +16,4 @@ ureq = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+tempfile = { workspace = true }

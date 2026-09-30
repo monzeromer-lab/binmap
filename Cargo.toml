@@ -62,6 +62,14 @@ gimli = "0.33"
 object = { version = "0.40.0", default-features = false, features = ["read", "std", "elf", "wasm"] }
 cargo_metadata = "0.23.1"
 fs4 = { version = "0.13", default-features = false, features = ["sync"] }
+# ACP's protocol types. The design names `agent-client-protocol` and says to
+# prefer it over hand-rolling JSON-RPC, because the protocol is versioned and a
+# hand-rolled client drifts silently. The `-schema` crate is that crate's type
+# half without its async runtime: the full crate pulls tokio and thirty-odd
+# futures dependencies into an engine that is deliberately blocking
+# everywhere else. The types are what drift; the transport is ours already.
+agent-client-protocol-schema = "1.9"
+
 # A blocking HTTP client, matching the blocking `ModelBackend`. Chosen over
 # reqwest because reqwest would pull an async runtime into the engine for a
 # request the loop makes one at a time and waits for anyway. TLS is rustls
