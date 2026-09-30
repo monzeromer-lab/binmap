@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 binmap-core = { workspace = true }
+addr2line = { workspace = true }
 object = { workspace = true }
 rustc-demangle = { workspace = true }
 serde = { workspace = true }

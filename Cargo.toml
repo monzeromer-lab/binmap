@@ -28,6 +28,7 @@ repository = "https://github.com/monzeromer-lab/binmap"
 [workspace.dependencies]
 proptest = "1.11"
 rustc-demangle = "0.1"
+addr2line = "0.26"
 binmap-core = { path = "crates/binmap-core" }
 binmap-verify = { path = "crates/binmap-verify" }
 binmap-binary = { path = "crates/binmap-binary" }
