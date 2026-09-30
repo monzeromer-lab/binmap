@@ -92,8 +92,12 @@ impl RenderOnce for Treemap {
             .flex()
             .flex_col()
             .size_full()
+            // An explicit height. `size_full` inside a flex parent whose own
+            // height resolves from its content gives the canvas nothing to
+            // paint into, and a canvas with no height paints nothing at all —
+            // silently, which is the worst way for a custom view to fail.
             .child(
-                div().flex_1().min_h_0().child(
+                div().h(px(150.)).w_full().child(
                     canvas(
                         move |bounds, _, _| {
                             let tiles = squarify(

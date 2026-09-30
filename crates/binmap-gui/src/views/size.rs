@@ -26,6 +26,21 @@ use binmap_core::attribution::{Attribution, Driver};
 use gpui_kit::prelude::*;
 use gpui_kit::{App, Window, div, px, relative};
 
+/// A path cut to fit its column, from the front.
+///
+/// The tail of a generic path is the part that identifies it —
+/// `core::slice::sort::stable::quicksort` and
+/// `core::slice::sort::stable::drift` share everything but their last
+/// segment — so an ellipsis goes at the *start*, not the end.
+fn shorten(path: &str, limit: usize) -> String {
+    let count = path.chars().count();
+    if count <= limit {
+        return path.to_string();
+    }
+    let tail: String = path.chars().skip(count - (limit - 1)).collect();
+    format!("…{tail}")
+}
+
 fn human(bytes: u64) -> String {
     const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
     let mut amount = bytes as f64;
@@ -142,14 +157,31 @@ impl RenderOnce for SizeExplorer {
                         d.child(Badge::new("legacy mangling", Tone::Warn, theme).caps())
                     }),
             )
+            // The treemap first. "What shape is this binary" is the question a
+            // reader arrives with; the tables answer "and exactly how much"
+            // once they have one.
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .gap(space::S12)
                     .flex_none()
-                    .child(div().flex_1().min_w_0().child(drivers(&attribution, total, theme)))
+                    .h(px(240.))
+                    .child(
+                        div().flex_1().min_w_0().child(
+                            Section::titled("Where the bytes are", theme)
+                                .child(crate::views::treemap::Treemap::of(&attribution, theme)),
+                        ),
+                    )
                     .child(div().w(px(330.)).flex_none().child(crates(&attribution, theme))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap(space::S12)
+                    .flex_none()
+                    .child(div().flex_1().min_w_0().child(drivers(&attribution, total, theme))),
             )
             .child(div().flex().flex_1().min_h_0().child(monomorphizations(&attribution, theme)))
             .into_any_element()
@@ -303,12 +335,14 @@ fn monomorphizations(attribution: &Attribution, theme: Theme) -> impl IntoElemen
         .flex_row()
         .items_center()
         .flex_none()
+        .w_full()
         .h(px(26.))
         .px(space::S12)
         .gap(space::S8)
         .border_b_1()
         .border_color(c.border_subtle)
-        .child(div().flex_1().child(eyebrow("Generic", theme)))
+        .child(div().w(px(330.)).flex_none().child(eyebrow("Generic", theme)))
+        .child(div().flex_1().min_w_0())
         .child(div().w(px(64.)).flex_none().child(eyebrow("Copies", theme)))
         .child(div().w(px(80.)).flex_none().child(eyebrow("Total", theme)))
         .child(div().w(px(110.)).flex_none().child(eyebrow("Saves at most", theme)));
@@ -328,13 +362,14 @@ fn monomorphizations(attribution: &Attribution, theme: Theme) -> impl IntoElemen
     }
 
     Section::titled("Generic instantiations", theme).flush().child(header).child(
-        div().flex().flex_col().flex_1().min_h_0().overflow_hidden().children(
+        div().flex().flex_col().flex_1().min_h_0().w_full().overflow_hidden().children(
             attribution.monomorphizations.iter().take(40).map(move |m| {
                 div()
                     .flex()
                     .flex_row()
                     .items_center()
                     .flex_none()
+                    .w_full()
                     .h(space::ROW_H)
                     .px(space::S12)
                     .gap(space::S8)
@@ -344,12 +379,13 @@ fn monomorphizations(attribution: &Attribution, theme: Theme) -> impl IntoElemen
                     .text_size(type_scale::FS_11)
                     .child(
                         div()
-                            .flex_1()
-                            .min_w_0()
+                            .w(px(330.))
+                            .flex_none()
                             .overflow_hidden()
                             .text_color(c.text_body)
-                            .child(m.generic_path.clone()),
+                            .child(shorten(&m.generic_path, 44)),
                     )
+                    .child(div().flex_1().min_w_0())
                     .child(
                         div()
                             .w(px(64.))

@@ -150,8 +150,12 @@ impl BinmapEngine {
 
         self.inner.runner.store().adopt(outcome.artifact.evidence.clone());
         self.inner.findings.lock().expect("findings poisoned").extend(outcome.findings);
+        if outcome.artifact.attribution.is_some() {
+            *self.inner.attribution.lock().expect("attribution poisoned") =
+                outcome.artifact.attribution.clone();
+        }
 
-        let mut adopted = 0;
+        let mut adopted = usize::from(outcome.artifact.attribution.is_some());
         for record in &outcome.artifact.runs {
             if record.kind != "sweep" {
                 continue;
@@ -472,7 +476,18 @@ impl Inner {
                     .lock()
                     .expect("findings poisoned")
                     .extend(collector.findings.into_inner().expect("collector poisoned"));
+                let summary = analysis.summary(&attribution);
                 *self.attribution.lock().expect("attribution poisoned") = Some(attribution);
+
+                // Persist before reporting, so a harness that exits on the
+                // terminal event does not exit during the write.
+                match self.persist(target) {
+                    Ok(()) => events.emit(EngineEvent::Finished { run, summary }),
+                    Err(error) => events.emit(EngineEvent::Failed {
+                        run,
+                        error: format!("the attribution finished but could not be saved: {error}"),
+                    }),
+                }
             }
             Err(Error::Cancelled) => {
                 events.emit(EngineEvent::Cancelled { run, completed: 0 });
@@ -504,7 +519,8 @@ impl Inner {
         let mut artifact = SessionArtifact::new(self.metadata_for(target))
             .with_findings(self.findings.lock().expect("findings poisoned").clone())
             .with_evidence(self.runner.store().records())
-            .with_gates(self.gate_reports());
+            .with_gates(self.gate_reports())
+            .with_attribution(self.attribution.lock().expect("attribution poisoned").clone());
 
         // Run state travels as opaque JSON: its shape is this crate's
         // business, and the interface must not learn it.

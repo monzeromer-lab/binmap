@@ -145,8 +145,14 @@ impl Binmap {
         // A restored session also means the flow has been through once
         // already: being walked through setup again is a tool that does not
         // remember you.
+        // Land where the most recent work is. A sweep is the bigger
+        // investment, so it wins where both exist.
         let stage = if restored > 0 {
-            state.select_view(View::Tune);
+            if !engine.sweeps().is_empty() {
+                state.select_view(View::Tune);
+            } else if engine.attribution().is_some() {
+                state.select_view(View::Size);
+            }
             Stage::Ready
         } else {
             Stage::Environment

@@ -31,6 +31,9 @@ pub struct SizeAnalysis<'a> {
 
 impl SizeAnalysis<'_> {
     /// Build the target and attribute what comes out.
+    ///
+    /// Does not emit a terminal event: the caller does, once it has persisted
+    /// whatever this found. See the note at the end of the method.
     pub fn run(
         &self,
         run: RunId,
@@ -67,9 +70,10 @@ impl SizeAnalysis<'_> {
             // Not a failure. A stripped binary is a normal thing to ship, and
             // the honest response is to say what was lost rather than report
             // an empty attribution as though it were the answer.
-            events.emit(EngineEvent::Finished {
+            events.emit(EngineEvent::Progress {
                 run,
-                summary: format!(
+                completed: 3,
+                message: format!(
                     "{} is stripped, so only its exported symbols are visible. Build with \
                      strip = \"none\" or strip = \"debuginfo\" to attribute all of it.",
                     artifact.display()
@@ -90,7 +94,15 @@ impl SizeAnalysis<'_> {
             events.emit(EngineEvent::Finding { run: run.clone(), finding: Box::new(finding) });
         }
 
-        events.emit(EngineEvent::Finished { run, summary: self.summary(&attribution) });
+        // The terminal event is deliberately *not* emitted here.
+        //
+        // A terminal event means the run is over, and anything waiting on one
+        // acts the moment it arrives — the headless harness exits on it.
+        // Emitting it before the session had been written meant the process
+        // died mid-write and the attribution was simply lost, silently, with
+        // the run reporting success. The caller emits it after persisting,
+        // which is the ordering the sweep already keeps.
+        let _ = run;
         Ok(attribution)
     }
 
@@ -124,7 +136,8 @@ impl SizeAnalysis<'_> {
         }
     }
 
-    fn summary(&self, attribution: &Attribution) -> String {
+    /// The one-line result, for the caller's terminal event.
+    pub fn summary(&self, attribution: &Attribution) -> String {
         let yours = attribution
             .drivers
             .iter()

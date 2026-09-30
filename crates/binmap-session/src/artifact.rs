@@ -95,6 +95,14 @@ pub struct SessionArtifact {
     pub gates: Vec<VerificationReport>,
     #[serde(default)]
     pub runs: Vec<RunRecord>,
+    /// The most recent size attribution.
+    ///
+    /// Carried so the Size Explorer survives the window closing. Reading a
+    /// symbol table takes long enough on a large binary that doing it again
+    /// on every open would be felt, and the answer does not change unless the
+    /// binary does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<binmap_core::attribution::Attribution>,
     /// Set when this artifact was written by an export that redacted
     /// something. Import surfaces it, because a redacted evidence record is
     /// not the same as the one the tool produced.
@@ -116,6 +124,7 @@ impl SessionArtifact {
             evidence: Vec::new(),
             gates: Vec::new(),
             runs: Vec::new(),
+            attribution: None,
             redacted: None,
         }
     }
@@ -127,6 +136,14 @@ impl SessionArtifact {
 
     pub fn with_evidence(mut self, evidence: Vec<Evidence>) -> Self {
         self.evidence = evidence;
+        self
+    }
+
+    pub fn with_attribution(
+        mut self,
+        attribution: Option<binmap_core::attribution::Attribution>,
+    ) -> Self {
+        self.attribution = attribution;
         self
     }
 
