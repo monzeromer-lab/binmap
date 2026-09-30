@@ -697,6 +697,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "binmap-agent"
+version = "0.1.0"
+dependencies = [
+ "binmap-core",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "binmap-binary"
 version = "0.1.0"
 dependencies = [

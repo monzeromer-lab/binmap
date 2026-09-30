@@ -28,6 +28,21 @@ wildcards = "allow"
 # `deny` names a crate nothing may depend on; `wrappers` lists the crates that
 # may. Every wrapper here is a real dependent, because cargo-deny warns about
 # one that is not and a warning nobody reads is how this file rots.
+# binmap-binary reads ELF files and binmap-agent talks to models. Neither is
+# something the interface may reach: it renders an Attribution, whose *shape*
+# lives in binmap-core precisely so that rendering it costs no dependency on
+# the crate that computes it.
+[[bans.deny]]
+name = "binmap-binary"
+wrappers = ["binmap-build", "binmap-eval"]
+
+# No wrappers yet, which is accurate: nothing depends on binmap-agent. When
+# orchestration starts calling it, binmap-build joins this list — and never
+# binmap-gui, because "the model may not lead an analysis" and the interface
+# may not lead anything.
+[[bans.deny]]
+name = "binmap-agent"
+
 [[bans.deny]]
 name = "binmap-build"
 wrappers = ["binmap", "binmap-eval"]

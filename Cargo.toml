@@ -4,6 +4,7 @@ members = [
     "crates/binmap",
     "crates/binmap-core",
     "crates/binmap-verify",
+    "crates/binmap-agent",
     "crates/binmap-binary",
     "crates/binmap-build",
     "crates/binmap-measure",
@@ -31,6 +32,7 @@ rustc-demangle = "0.1"
 addr2line = "0.26"
 binmap-core = { path = "crates/binmap-core" }
 binmap-verify = { path = "crates/binmap-verify" }
+binmap-agent = { path = "crates/binmap-agent" }
 binmap-binary = { path = "crates/binmap-binary" }
 binmap-build = { path = "crates/binmap-build" }
 binmap-measure = { path = "crates/binmap-measure" }
