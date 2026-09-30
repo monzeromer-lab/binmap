@@ -12,8 +12,16 @@
 //! disagree, a register that is not in the dump: each says so instead of
 //! producing something plausible.
 
+pub mod bias;
+pub mod classify;
+pub mod correspondence;
 pub mod dump;
+pub mod modules;
 pub mod registers;
+pub mod symbolize;
+pub mod unwind;
 
+pub use bias::{Derivation, LoadBias};
+pub use correspondence::Correspondence;
 pub use dump::{CoreDump, Mapping, Segment, Thread};
 pub use registers::{DwarfRegister, PtraceSlot, Registers};

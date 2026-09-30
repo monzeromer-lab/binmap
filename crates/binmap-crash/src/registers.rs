@@ -146,9 +146,11 @@ impl Registers {
         }
         Some(Self {
             slots: registers
-                .chunks_exact(8)
+                .as_chunks::<8>()
+                .0
+                .iter()
                 .take(PtraceSlot::COUNT)
-                .map(|bytes| u64::from_le_bytes(bytes.try_into().expect("chunks_exact(8)")))
+                .map(|bytes| u64::from_le_bytes(*bytes))
                 .collect(),
         })
     }

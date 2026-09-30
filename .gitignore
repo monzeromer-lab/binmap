@@ -12,3 +12,8 @@ corpus/web/node_modules/
 corpus/web/dist/
 corpus/web-heavy/node_modules/
 corpus/web-heavy/dist/
+
+# Crash-analysis fixtures: megabytes each, and only meaningful beside the exact
+# binary that produced them. `corpus/crasher/capture.sh` regenerates the pair.
+corpus/crasher/cores/
+corpus/crasher/target/

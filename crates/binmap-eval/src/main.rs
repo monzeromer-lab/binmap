@@ -75,6 +75,19 @@ enum Command {
     Web(WebOptions),
     /// Sweep a web project's configuration matrix (`TOOLING-WEB §5`).
     WebSweep(WebSweepOptions),
+    /// Analyse a core dump against the binary that produced it (Phase 2).
+    Crash(CrashOptions),
+}
+
+#[derive(Args, Debug, Clone)]
+struct CrashOptions {
+    /// The core dump.
+    core: PathBuf,
+    /// The binary that produced it.
+    binary: PathBuf,
+    /// Show every frame rather than the first twenty.
+    #[arg(long)]
+    full: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -167,6 +180,7 @@ fn main() -> ExitCode {
         Command::Reasoners(options) => reasoners(options),
         Command::Web(options) => web(options),
         Command::WebSweep(options) => web_sweep(options),
+        Command::Crash(options) => crash(options),
     };
 
     match result {
@@ -1019,5 +1033,127 @@ fn web_sweep(options: &WebSweepOptions) -> Result<bool, String> {
         println!("  {}", smallest.configuration.target.audience());
     }
 
+    Ok(true)
+}
+
+/// Analyse a core dump (Phase 2, `F2.1`–`F2.8`).
+///
+/// Everything refusable is refused before a single frame is printed: a binary
+/// that did not produce this core, or a load bias whose two derivations
+/// disagree, would both yield a stack of real-looking symbols at real-looking
+/// lines, every one of them wrong.
+fn crash(options: &CrashOptions) -> Result<bool, String> {
+    use binmap_crash::{CoreDump, bias, classify, correspondence, modules, symbolize, unwind};
+
+    let core_data = std::fs::read(&options.core)
+        .map_err(|error| format!("could not read {}: {error}", options.core.display()))?;
+    let binary = std::fs::read(&options.binary)
+        .map_err(|error| format!("could not read {}: {error}", options.binary.display()))?;
+
+    let dump = CoreDump::parse(&core_data).map_err(|error| error.to_string())?;
+    let thread = dump.crashing_thread();
+    let path = options.binary.display().to_string();
+
+    // Refuse before symbolizing, not after.
+    let verdict = correspondence::verify(&dump, &core_data, &binary, &path)
+        .map_err(|error| error.to_string())?;
+    println!("{}", verdict.describe());
+    if !verdict.permits_symbolization() {
+        return Err("this binary did not produce this core".into());
+    }
+
+    let bias = bias::derive(&dump, &binary).map_err(|error| error.to_string())?;
+    if bias.derivation.needs_a_caveat() {
+        println!("{}", bias.derivation.describe());
+    }
+
+    let name = options
+        .binary
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let loaded = modules::Modules::load(&dump, Some((&name, &binary)));
+    for missing in &loaded.unavailable {
+        println!("  {} {}", missing.path, missing.because);
+    }
+
+    let stack = unwind::walk(&dump, &core_data, &loaded, &thread.registers)
+        .map_err(|error| error.to_string())?;
+
+    // One symbolizer per module, built from every frame that landed in it.
+    let mut by_module: std::collections::BTreeMap<&str, Vec<u64>> = Default::default();
+    for frame in &stack.frames {
+        if let Some((module, address)) = frame.module.as_deref().zip(frame.link_time_address) {
+            by_module.entry(module).or_default().push(address);
+        }
+    }
+    let symbolizers: std::collections::BTreeMap<&str, symbolize::Symbolizer> = by_module
+        .iter()
+        .filter_map(|(module, addresses)| {
+            symbolize::Symbolizer::load(std::path::Path::new(module), addresses)
+                .ok()
+                .map(|symbolizer| (*module, symbolizer))
+        })
+        .collect();
+
+    let resolved: Vec<symbolize::Resolved> = stack
+        .frames
+        .iter()
+        .map(|frame| {
+            frame
+                .module
+                .as_deref()
+                .zip(frame.link_time_address)
+                .and_then(|(module, address)| {
+                    symbolizers.get(module).map(|symbolizer| symbolizer.resolve(address))
+                })
+                .unwrap_or_default()
+        })
+        .collect();
+
+    let crash = classify::classify(&dump, thread, &resolved);
+    println!("\n{}", crash.title());
+    println!("  {}\n", crash.what_to_look_at());
+    println!("{}\n", stack.describe());
+
+    let limit = if options.full { stack.frames.len() } else { 20 };
+    for (index, (frame, resolved)) in stack.frames.iter().zip(&resolved).enumerate().take(limit) {
+        let module =
+            frame.module.as_deref().and_then(|path| path.rsplit('/').next()).unwrap_or("unknown");
+
+        if resolved.is_empty() {
+            println!(
+                "#{index:<2} {:#018x}  <{module}>  [{}]",
+                frame.runtime_address,
+                frame.method.label()
+            );
+            continue;
+        }
+        for (depth, location) in resolved.locations.iter().enumerate() {
+            let inlined = if location.inlined { "  (inlined)" } else { "" };
+            if depth == 0 {
+                println!(
+                    "#{index:<2} {:#018x}  {}{inlined}  [{}]",
+                    frame.runtime_address,
+                    location.describe(),
+                    frame.method.label()
+                );
+            } else {
+                println!("{:22}{}{inlined}", "", location.describe());
+            }
+        }
+    }
+    if stack.frames.len() > limit {
+        println!("… {} more frames; pass --full to see them", stack.frames.len() - limit);
+    }
+
+    // The deterministic layer symbolizing most frames is the phase's exit
+    // criterion, so it is reported rather than assumed.
+    let symbolized = resolved.iter().filter(|frame| !frame.is_empty()).count();
+    println!(
+        "\n{symbolized} of {} frames symbolized ({:.0}%)",
+        stack.frames.len(),
+        symbolized as f64 * 100.0 / stack.frames.len().max(1) as f64
+    );
     Ok(true)
 }

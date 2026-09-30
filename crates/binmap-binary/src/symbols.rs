@@ -207,6 +207,21 @@ impl Mangling {
 }
 
 impl SymbolTable {
+    /// The symbol covering an address, if any.
+    ///
+    /// The fallback for an address DWARF does not describe — most of libc, and
+    /// anything built without debug info. Bounded by the symbol's own size
+    /// rather than by "the nearest symbol below": the nearest-below answer is
+    /// never `None`, so a wild pointer would be reported as being inside
+    /// whichever function happened to be last in the table.
+    pub fn containing(&self, address: u64) -> Option<&Symbol> {
+        self.symbols.iter().find(|symbol| {
+            symbol.size > 0 && (symbol.address..symbol.address + symbol.size).contains(&address)
+        })
+    }
+}
+
+impl SymbolTable {
     /// Which scheme this binary's Rust symbols were mangled with.
     ///
     /// `None` when there are no Rust symbols to judge by. Where it is

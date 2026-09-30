@@ -101,6 +101,40 @@ impl SourceMap {
         Ok(Self { by_address, has_debug_info })
     }
 
+    /// Resolve a specific set of addresses rather than every symbol's start.
+    ///
+    /// Crash analysis needs this: a faulting program counter is somewhere in
+    /// the *middle* of a function, and `resolve` only keys on the addresses
+    /// symbols begin at, so every stack frame missed and reported "no line
+    /// information" while the binary had full debug info. The addresses are
+    /// known up front once the stack has been walked, so this keeps the same
+    /// resolve-eagerly shape and the same reason for it.
+    pub fn for_addresses(artifact: &Path, addresses: &[u64]) -> Result<Self> {
+        let bytes = std::fs::read(artifact).map_err(|source| Error::io(artifact, source))?;
+        let object = object::File::parse(&*bytes).map_err(|error| {
+            Error::Other(format!("{} is not an object file: {error}", artifact.display()))
+        })?;
+
+        let context = match addr2line::Context::from_dwarf(
+            match addr2line::gimli::Dwarf::load(|id| load_section(&object, id)) {
+                Ok(dwarf) => dwarf,
+                Err(_) => return Ok(Self { by_address: BTreeMap::new(), has_debug_info: false }),
+            },
+        ) {
+            Ok(context) => context,
+            Err(_) => return Ok(Self { by_address: BTreeMap::new(), has_debug_info: false }),
+        };
+
+        let mut by_address = BTreeMap::new();
+        for address in addresses {
+            if let Some(origin) = lookup(&context, *address) {
+                by_address.insert(*address, origin);
+            }
+        }
+        let has_debug_info = !by_address.is_empty();
+        Ok(Self { by_address, has_debug_info })
+    }
+
     pub fn of(&self, symbol: &Symbol) -> Option<&SourceOrigin> {
         self.by_address.get(&symbol.address)
     }

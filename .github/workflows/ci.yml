@@ -95,6 +95,39 @@ jobs:
       - name: The provider table is listable
         run: cargo run --release -p binmap-eval -- reasoners corpus/stress
 
+  crash:
+    name: Phase 2 — crash analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The cores are captured rather than committed: megabytes each, and only
+      # meaningful beside the exact binary that produced them. Three of the
+      # bugs these tests caught were invisible to any synthetic fixture.
+      - name: Capture core dumps
+        run: |
+          sudo apt-get update && sudo apt-get install -y gdb
+          ./corpus/crasher/capture.sh
+
+      - name: Analyse a real core
+        run: |
+          cargo run --release -p binmap-eval -- crash \
+            corpus/crasher/cores/segv.core corpus/crasher/target/release/crasher
+
+      # A binary that did not produce the core must be refused, not symbolized:
+      # the stack would be entirely plausible and entirely wrong.
+      - name: A mismatched binary is refused
+        run: |
+          if cargo run --release -p binmap-eval -- crash \
+               corpus/crasher/cores/segv.core corpus/crasher/cores/crasher-abort; then
+            echo "::error::a mismatched binary should have been refused" && exit 1
+          fi
+
+      - name: Crash analysis tests
+        run: cargo test --release -p binmap-crash
+
   web:
     name: Phase 1.5 — the web backend
     runs-on: ubuntu-latest

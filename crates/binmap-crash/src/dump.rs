@@ -17,9 +17,9 @@
 
 use crate::registers::Registers;
 use binmap_core::error::{Error, Result};
+use object::Endianness;
 use object::elf;
 use object::read::elf::{ElfFile64, FileHeader, ProgramHeader};
-use object::Endianness;
 use serde::{Deserialize, Serialize};
 
 /// `NT_FILE`, which is ASCII `"FILE"` and is not always in `object`'s
@@ -200,25 +200,23 @@ impl CoreDump {
     /// segment, and only the first is at offset zero.
     pub fn executable_mapping(&self) -> Option<&Mapping> {
         let name = self.executable.as_deref();
-        self.mappings
-            .iter()
-            .filter(|mapping| mapping.file_offset == 0)
-            .find(|mapping| match name {
-                Some(name) => mapping.path.rsplit('/').next() == Some(name)
-                    || mapping.path.ends_with(name),
-                // With no name recorded, the lowest zero-offset mapping is the
-                // executable in every layout the kernel produces.
-                None => true,
-            })
+        self.mappings.iter().filter(|mapping| mapping.file_offset == 0).find(|mapping| match name {
+            Some(name) => {
+                mapping.path.rsplit('/').next() == Some(name) || mapping.path.ends_with(name)
+            }
+            // With no name recorded, the lowest zero-offset mapping is the
+            // executable in every layout the kernel produces.
+            None => true,
+        })
     }
 }
 
 /// One `NT_PRSTATUS` note: a thread's registers and the signal that stopped it.
 fn parse_prstatus(descriptor: &[u8]) -> Option<Thread> {
     // From the field table in `§1.4`: `pr_cursig` is at 12, `pr_pid` at 32.
-    let signal = descriptor.get(12..14).map(|bytes| {
-        i16::from_le_bytes(bytes.try_into().expect("2 bytes")) as i32
-    })?;
+    let signal = descriptor
+        .get(12..14)
+        .map(|bytes| i16::from_le_bytes(bytes.try_into().expect("2 bytes")) as i32)?;
     let pid = descriptor
         .get(32..36)
         .map(|bytes| i32::from_le_bytes(bytes.try_into().expect("4 bytes")))?;
@@ -249,7 +247,7 @@ fn parse_auxv(descriptor: &[u8]) -> (Option<u64>, Option<u64>) {
 
     let mut phdr = None;
     let mut entry = None;
-    for pair in descriptor.chunks_exact(16) {
+    for pair in descriptor.as_chunks::<16>().0 {
         let kind = u64::from_le_bytes(pair[..8].try_into().expect("8 bytes"));
         let value = u64::from_le_bytes(pair[8..].try_into().expect("8 bytes"));
         match kind {
@@ -267,8 +265,7 @@ fn parse_auxv(descriptor: &[u8]) -> (Option<u64>, Option<u64>) {
 /// The layout is why the paths cannot be read first: they are variable-length
 /// and come *after* all the fixed-size triples.
 fn parse_nt_file(descriptor: &[u8]) -> Vec<Mapping> {
-    let Some(count) = descriptor.get(..8).map(|b| u64::from_le_bytes(b.try_into().unwrap()))
-    else {
+    let Some(count) = descriptor.get(..8).map(|b| u64::from_le_bytes(b.try_into().unwrap())) else {
         return Vec::new();
     };
     let Some(page_size) = descriptor.get(8..16).map(|b| u64::from_le_bytes(b.try_into().unwrap()))
@@ -285,11 +282,12 @@ fn parse_nt_file(descriptor: &[u8]) -> Vec<Mapping> {
 
     let mut names = paths.split(|byte| *byte == 0);
     triples
-        .chunks_exact(24)
+        .as_chunks::<24>()
+        .0
+        .iter()
         .filter_map(|triple| {
-            let read = |at: usize| {
-                u64::from_le_bytes(triple[at..at + 8].try_into().expect("8 bytes"))
-            };
+            let read =
+                |at: usize| u64::from_le_bytes(triple[at..at + 8].try_into().expect("8 bytes"));
             let path = String::from_utf8_lossy(names.next()?).to_string();
             Some(Mapping {
                 path,
