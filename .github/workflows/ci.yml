@@ -122,3 +122,9 @@ jobs:
 
       - name: Web backend tests
         run: cargo test --release -p binmap-web
+
+      # The sweep drives esbuild by CLI flags into a directory of ours, so it
+      # proves the rule that matters: the user's config files and their
+      # existing dist/ are never touched.
+      - name: Sweep the web configuration matrix
+        run: cargo run --release -p binmap-eval -- web-sweep corpus/web --targets-only

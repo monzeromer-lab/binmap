@@ -73,6 +73,20 @@ enum Command {
     ///
     /// Phase 1.5. Takes a project root holding a `package.json`.
     Web(WebOptions),
+    /// Sweep a web project's configuration matrix (`TOOLING-WEB §5`).
+    WebSweep(WebSweepOptions),
+}
+
+#[derive(Args, Debug, Clone)]
+struct WebSweepOptions {
+    /// The project to open.
+    root: PathBuf,
+    /// The entry point, relative to the root.
+    #[arg(long, default_value = "src/index.ts")]
+    entry: String,
+    /// Sweep only the target axis — the one nobody measures on their own code.
+    #[arg(long)]
+    targets_only: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -152,6 +166,7 @@ fn main() -> ExitCode {
         Command::Reason(options) => reason(options),
         Command::Reasoners(options) => reasoners(options),
         Command::Web(options) => web(options),
+        Command::WebSweep(options) => web_sweep(options),
     };
 
     match result {
@@ -885,5 +900,105 @@ fn web(options: &WebOptions) -> Result<bool, String> {
     }
 
     let _ = directory;
+    Ok(true)
+}
+
+/// Sweep a web project (`TOOLING-WEB §5`).
+///
+/// Drives esbuild by CLI flags into a directory of ours, so the user's config
+/// files and their existing `dist/` are never touched.
+fn web_sweep(options: &WebSweepOptions) -> Result<bool, String> {
+    use binmap_web::configuration::WebMatrix;
+
+    let project = binmap_web::project::discover(&options.root).map_err(|e| e.to_string())?;
+    let matrix =
+        if options.targets_only { WebMatrix::targets_only() } else { WebMatrix::default() };
+
+    println!("{}", project.describe());
+    println!("sweeping {} configurations of {}", matrix.cardinality(), options.entry);
+
+    let settings = binmap_web::CompressionSettings::default();
+    let plan = binmap_web::sweep::WebSweepPlan {
+        root: &options.root,
+        entry: &options.entry,
+        matrix,
+        settings,
+    };
+
+    let root = options.root.clone();
+    let entry = options.entry.clone();
+    let sweep = plan
+        .run(|configuration, flags, directory| {
+            let mut command = std::process::Command::new("npx");
+            command
+                .current_dir(&root)
+                .arg("--no-install")
+                .arg("esbuild")
+                .arg(&entry)
+                .arg("--bundle")
+                .arg("--format=esm")
+                .arg("--sourcemap")
+                .arg("--metafile=".to_string() + &directory.join("meta.json").display().to_string())
+                .arg("--outdir=".to_string() + &directory.display().to_string())
+                .args(flags);
+
+            let output = command.output().map_err(|error| {
+                binmap_core::Error::Other(format!("could not run esbuild: {error}"))
+            })?;
+            if !output.status.success() {
+                return Err(binmap_core::Error::Other(format!(
+                    "{} did not build: {}",
+                    configuration.name(),
+                    String::from_utf8_lossy(&output.stderr).lines().next().unwrap_or("")
+                )));
+            }
+            Ok(())
+        })
+        .map_err(|e| e.to_string())?;
+
+    println!("\n{}", sweep.summary());
+
+    // Why anything failed, before the results. A sweep that reported "0
+    // configurations built" and nothing else is one nobody can debug.
+    if !sweep.failed.is_empty() {
+        println!("\ndid not build:");
+        for (configuration, why) in sweep.failed.iter().take(6) {
+            println!("  {:<34} {why}", configuration.name());
+        }
+    }
+
+    println!("\nsmallest first, by transfer size:");
+    let mut ranked: Vec<_> = sweep.measured.iter().collect();
+    ranked.sort_by_key(|m| m.size.transfer());
+    for measured in ranked.iter().take(12) {
+        println!(
+            "  {:<34} {:>8} raw  {:>8} transfer{}{}",
+            measured.configuration.name(),
+            measured.size.raw,
+            measured.size.transfer(),
+            measured.initial_load.map(|bytes| format!("  {bytes:>8} initial")).unwrap_or_default(),
+            if measured.configuration.is_shippable() { "" } else { "  (control)" }
+        );
+    }
+
+    // The finding nobody else produces (§4.1).
+    let disagreements = sweep.disagreements();
+    if disagreements.is_empty() {
+        println!("\nraw and transfer size agree about every configuration.");
+    } else {
+        println!("\nwhere raw and transfer size disagree:");
+        for (measured, ranking) in &disagreements {
+            println!("  {}", measured.configuration.describe());
+            println!("    {}", ranking.describe());
+        }
+    }
+
+    // The trade the target axis makes is in browsers, not bytes, and that is a
+    // product decision rather than a build setting.
+    if let Some(smallest) = sweep.smallest() {
+        println!("\nsmallest shippable: {}", smallest.configuration.describe());
+        println!("  {}", smallest.configuration.target.audience());
+    }
+
     Ok(true)
 }

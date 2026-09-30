@@ -12,10 +12,12 @@
 //! target simply does not offer `Disassembly`, and the interface says so
 //! instead of offering a button that fails.
 
+pub mod configuration;
 pub mod metafile;
 pub mod project;
 pub mod size;
 pub mod sourcemap;
+pub mod sweep;
 pub mod tier;
 
 pub use size::{CompressionSettings, Ranking, TransferSize, measure, rank};
