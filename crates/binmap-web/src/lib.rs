@@ -12,6 +12,7 @@
 //! target simply does not offer `Disassembly`, and the interface says so
 //! instead of offering a button that fails.
 
+pub mod metafile;
 pub mod size;
 pub mod sourcemap;
 pub mod tier;
