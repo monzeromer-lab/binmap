@@ -38,7 +38,19 @@ wildcards = "allow"
 # the crate that computes it.
 [[bans.deny]]
 name = "binmap-binary"
-wrappers = ["binmap-build", "binmap-eval"]
+wrappers = ["binmap-build", "binmap-crash", "binmap-eval"]
+
+# binmap-crash reads core dumps and unwinds stacks. An analysis, so the
+# interface may not reach it: the Stack Pane renders frames whose *shape* the
+# interface knows, and symbolizing one is not something a view may do.
+#
+# It reaches binmap-binary because a core is only meaningful beside the binary
+# that produced it — the symbol table and the line table are the same ones
+# `F1.6` already reads, and a second copy of that lookup would drift from the
+# first.
+[[bans.deny]]
+name = "binmap-crash"
+wrappers = ["binmap-eval"]
 
 # And now binmap-agent, which was waiting for a dependent. A `deny` entry with
 # no wrappers forbids a crate from the graph entirely, so this could not be
