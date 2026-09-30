@@ -816,6 +816,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "binmap-dotnet"
+version = "0.1.0"
+dependencies = [
+ "binmap-core",
+ "proptest",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "binmap-eval"
 version = "0.1.0"
 dependencies = [

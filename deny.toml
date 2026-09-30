@@ -60,6 +60,12 @@ wrappers = ["binmap-eval", "binmap-perf"]
 name = "binmap-perf"
 wrappers = ["binmap-eval"]
 
+# binmap-dotnet reads the ILC dependency graph and the toolchain's trim
+# warnings. An analysis like the others, so the interface may not reach it.
+[[bans.deny]]
+name = "binmap-dotnet"
+wrappers = ["binmap-eval"]
+
 # And now binmap-agent, which was waiting for a dependent. A `deny` entry with
 # no wrappers forbids a crate from the graph entirely, so this could not be
 # written while nothing called it; orchestration now does, and the ban is real.

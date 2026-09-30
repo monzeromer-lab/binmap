@@ -6,6 +6,7 @@ members = [
     "crates/binmap-verify",
     "crates/binmap-agent",
     "crates/binmap-crash",
+    "crates/binmap-dotnet",
     "crates/binmap-perf",
     "crates/binmap-web",
     "crates/binmap-binary",
@@ -37,6 +38,7 @@ binmap-core = { path = "crates/binmap-core" }
 binmap-verify = { path = "crates/binmap-verify" }
 binmap-agent = { path = "crates/binmap-agent" }
 binmap-crash = { path = "crates/binmap-crash" }
+binmap-dotnet = { path = "crates/binmap-dotnet" }
 binmap-perf = { path = "crates/binmap-perf" }
 binmap-web = { path = "crates/binmap-web" }
 binmap-binary = { path = "crates/binmap-binary" }
@@ -79,6 +81,11 @@ agent-client-protocol-schema = "1.9"
 # TOOLING-WEB §2.1 is explicit that hand-rolling a VLQ decoder is a false
 # economy: index maps, relative resolution and one-versus-zero-based line
 # conventions across producers are exactly the edge cases that get missed.
+# The ILC dependency graph is DGML, which is XML. A streaming reader
+# rather than a DOM one: a graph for a real application has hundreds of
+# thousands of nodes, and holding all of them to answer one question about
+# one of them is the wrong shape.
+quick-xml = "0.41"
 sourcemap = "9"
 flate2 = "1"
 brotli = "8"
