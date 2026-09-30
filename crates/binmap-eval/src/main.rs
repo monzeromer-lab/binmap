@@ -881,6 +881,25 @@ fn web(options: &WebOptions) -> Result<bool, String> {
             println!("\nwhy {} is in the bundle:", largest.module);
             println!("  {}", attribution.explain(&largest.module));
         }
+
+        // The deterministic findings (§6). Quiet when there is nothing wrong,
+        // which is the common case and is meant to be.
+        let findings = binmap_web::findings::analyse(&attribution);
+        if findings.is_empty() {
+            println!(
+                "\nnothing to report: no duplicate packages, no whole-library imports, \
+                      no polyfills and no Node shims."
+            );
+        } else {
+            println!("\nfindings:");
+            for finding in &findings {
+                // Derived, never Measured: the bytes are measured and the
+                // conclusion is a named rule of ours.
+                println!("  ◈ {}  [{}]", finding.title, finding.kind.rule());
+                println!("    {}", finding.detail);
+                println!("    Trade-off: {}", finding.kind.cost());
+            }
+        }
     } else if project.assets.iter().any(|asset| asset.map.is_some()) {
         // Source maps: the fallback that always works.
         println!("\nattributed from source maps:");

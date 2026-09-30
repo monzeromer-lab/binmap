@@ -10,3 +10,5 @@ crates/*/tests/*.proptest-regressions
 # that changes with the content.
 corpus/web/node_modules/
 corpus/web/dist/
+corpus/web-heavy/node_modules/
+corpus/web-heavy/dist/

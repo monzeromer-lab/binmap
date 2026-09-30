@@ -128,3 +128,20 @@ jobs:
       # existing dist/ are never touched.
       - name: Sweep the web configuration matrix
         run: cargo run --release -p binmap-eval -- web-sweep corpus/web --targets-only
+
+      # The deliberately badly-configured corpus, with real npm packages. A
+      # rule that only fires on a metafile written by hand is a rule that has
+      # never met production.
+      - name: Build the badly-configured corpus
+        working-directory: corpus/web-heavy
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: The findings fire on real dependencies
+        run: |
+          output=$(cargo run --release -p binmap-eval -- web corpus/web-heavy)
+          echo "$output"
+          for rule in web-whole-library-import web-polyfill-cost web-node-polyfill; do
+            echo "$output" | grep -q "$rule" || { echo "::error::$rule did not fire"; exit 1; }
+          done
