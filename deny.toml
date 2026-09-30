@@ -4,7 +4,11 @@
 # true today; this file is what keeps it true when a contributor adds one
 # convenient dependency at 2am. Run in CI:
 #
-#     cargo deny check bans
+#     cargo deny check bans licenses advisories
+#
+# All three pass. `bans` is the architectural one and the reason this file
+# exists; the other two were added once they were made to pass, because a check
+# that has never passed is a check nobody can use.
 #
 # This config is itself checked: an earlier version failed on its own workspace
 # because `wildcards = "deny"` flags path dependencies, which every workspace
@@ -72,7 +76,49 @@ allow = [
     "Unicode-3.0",
     "Zlib",
     "CDLA-Permissive-2.0",
+    # Public-domain-equivalent, and so more permissive than everything above
+    # rather than less: 0BSD drops BSD's attribution clause, CC0 is a dedication
+    # to the public domain. Absent from the list because nobody had hit them
+    # yet, not because they were considered and rejected.
+    "0BSD",
+    "CC0-1.0",
+    # The bzip2 licence is BSD-style with a no-misrepresentation clause. Arrives
+    # with libbz2-rs-sys, which is a decompressor, not something we link into a
+    # measurement.
+    "bzip2-1.0.6",
 ]
 
 [advisories]
 yanked = "deny"
+
+# Six unmaintained crates, and every one of them arrives through `gpui-kit`:
+#
+#   bincode         → syntect → gpui-base
+#   instant         → gpui-base
+#   paste           → gpui-component
+#   rustls-pemfile  → gpui-pre-reqwest
+#   rustybuzz       → usvg → gpui-pre
+#   ttf-parser      → fontdb → cosmic-text → gpui-pre-wgpu
+#
+# None is a vulnerability — "unmaintained" means nobody is shipping fixes, not
+# that there is something to fix. None is reachable from the engine crates,
+# which are what actually compute the numbers this product reports: they come
+# in with the *interface's* font shaping, SVG rendering and syntax
+# highlighting. TOOLING §6 predicted exactly this coupling, that a GPUI
+# upgrade would block a release without blocking development, and the answer
+# there was to let it degrade rather than block.
+#
+# These are listed individually, and deliberately not as a blanket
+# `unmaintained = "allow"`. The point of running the check at all is to hear
+# about the *next* advisory — above all a vulnerability, which is what
+# RUSTSEC-2026-0285 in rustls was until `cargo update -p rustls` moved it to
+# 0.23.45. Each entry here was traced before it was added, and an entry that
+# stops matching is a warning cargo-deny will raise on its own.
+ignore = [
+    "RUSTSEC-2025-0141", # bincode
+    "RUSTSEC-2024-0384", # instant
+    "RUSTSEC-2024-0436", # paste
+    "RUSTSEC-2025-0134", # rustls-pemfile
+    "RUSTSEC-2026-0206", # rustybuzz
+    "RUSTSEC-2026-0192", # ttf-parser
+]

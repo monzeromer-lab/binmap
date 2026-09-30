@@ -251,6 +251,12 @@ impl<'a> Sweep<'a> {
         events: &dyn EventSink,
         cancellation: &Cancellation,
     ) -> Result<()> {
+        // Claim the project before anything is built. Two sweeps over one
+        // project delete each other's build directories as they reclaim disk,
+        // which does not crash — it produces a run whose builds keep vanishing
+        // and which reports that nothing passed. Refuse instead.
+        let _claim = self.claim_project()?;
+
         let remaining = state.remaining();
         let (already, total) = state.progress();
 
@@ -575,6 +581,19 @@ impl<'a> Sweep<'a> {
         }
         let _ = std::fs::remove_dir_all(&directory);
         Some(destination)
+    }
+
+    /// Take the project's lock for the duration of the sweep.
+    ///
+    /// A builder that has no build directory of its own has nothing another
+    /// run could delete, so there is nothing to claim and the sweep proceeds.
+    fn claim_project(&self) -> Result<Option<crate::lock::ProjectLock>> {
+        let Some(directory) = self.builder.build_directory(&BuildConfiguration::default_release())
+        else {
+            return Ok(None);
+        };
+        let Some(root) = directory.parent() else { return Ok(None) };
+        crate::lock::ProjectLock::acquire(root).map(Some)
     }
 
     /// Time the configurations that passed their gates — one at a time, always.

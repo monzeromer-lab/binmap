@@ -51,6 +51,7 @@ tracing = "0.1"
 # just stopped looking.
 object = { version = "0.40.0", default-features = false, features = ["read", "std", "elf", "wasm"] }
 cargo_metadata = "0.23.1"
+fs4 = { version = "0.13", default-features = false, features = ["sync"] }
 toml_edit = "0.25.13"
 similar = "3.2.0"
 statrs = "0.19.1"

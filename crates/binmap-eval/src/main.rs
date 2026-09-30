@@ -23,6 +23,7 @@ use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Development-only harness. Not a product surface.
@@ -185,7 +186,20 @@ fn size(options: &Options) -> Result<bool, String> {
         None => targets
             .iter()
             .find(|target| target.capabilities.has(binmap_core::Capability::SizeAttribution))
-            .ok_or("no target in this project can have its bytes attributed")?,
+            .ok_or_else(|| {
+                // Say which targets there are and why none qualifies. "No
+                // target can" sends the reader looking for a setting.
+                let kinds: Vec<String> = targets
+                    .iter()
+                    .map(|target| format!("{} ({})", target.id, target.kind))
+                    .collect();
+                format!(
+                    "nothing here has a symbol table to attribute. An rlib is an archive of \
+                     object files and a .wasm module is not ELF, so neither qualifies; \
+                     attribution needs a binary, cdylib or staticlib. This project offers: {}",
+                    kinds.join(", ")
+                )
+            })?,
     };
 
     let events = Arc::new(Printer::new());
@@ -195,7 +209,12 @@ fn size(options: &Options) -> Result<bool, String> {
     events.wait();
 
     let Some(attribution) = engine.attribution() else {
-        return Ok(false);
+        // Exiting nonzero with nothing on stderr leaves the reader guessing.
+        // If the run failed, that reason is the answer; if it somehow did not,
+        // say that instead of printing an empty report.
+        return Err(events
+            .failure()
+            .unwrap_or_else(|| "the attribution finished without producing a result".to_string()));
     };
 
     println!();
@@ -286,11 +305,20 @@ struct Printer {
     /// Set by the run's terminal event. A detached analysis has to be waited
     /// for, and the terminal event is the only honest signal that it is over.
     done: AtomicBool,
+    /// Why the run failed, if it did.
+    ///
+    /// A failure arrives as an event rather than as an `Err`, because a run
+    /// that fails halfway still has results worth keeping. But nothing was
+    /// reading it, so a sweep that never built anything printed an empty
+    /// frontier and exited 0 — which in CI is indistinguishable from success.
+    /// The event stream is the authority on whether a run failed, so the sink
+    /// is where that has to be remembered.
+    failure: Mutex<Option<String>>,
 }
 
 impl Printer {
     fn new() -> Self {
-        Self { done: AtomicBool::new(false) }
+        Self { done: AtomicBool::new(false), failure: Mutex::new(None) }
     }
 
     /// Block until the run reports a terminal event.
@@ -298,6 +326,11 @@ impl Printer {
         while !self.done.load(Ordering::SeqCst) {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+    }
+
+    /// Why the run failed, if it did.
+    fn failure(&self) -> Option<String> {
+        self.failure.lock().expect("printer failure poisoned").clone()
     }
 }
 
@@ -331,7 +364,11 @@ impl EventSink for Printer {
             EngineEvent::Cancelled { completed, .. } => {
                 println!("cancelled after {completed} configurations; results kept");
             }
-            EngineEvent::Failed { error, .. } => eprintln!("failed: {error}"),
+            // Recorded, not printed: every caller turns this into an `Err`
+            // that `main` reports, and printing here as well said it twice.
+            EngineEvent::Failed { error, .. } => {
+                *self.failure.lock().expect("printer failure poisoned") = Some(error);
+            }
         }
     }
 }
@@ -348,7 +385,13 @@ fn run_sweep(engine: &BinmapEngine, options: &Options) -> Result<(SweepState, St
     };
 
     let run = RunId("eval-0001".into());
-    engine.sweep_blocking(run.clone(), &target, &Printer::new(), &Cancellation::new());
+    let printer = Printer::new();
+    engine.sweep_blocking(run.clone(), &target, &printer, &Cancellation::new());
+    // A failed run is not a run with no results to report: it is a failure,
+    // and the caller must be able to exit nonzero on it.
+    if let Some(error) = printer.failure() {
+        return Err(error);
+    }
     let state =
         engine.run_state(&run).ok_or("the sweep left no state, which should be impossible")?;
     Ok((state, target.id.clone()))
@@ -431,5 +474,55 @@ fn acceptance(options: &Options) -> Result<bool, String> {
     } else {
         println!("\nFAIL: {:.1}% < {:.1}%", reduction * 100.0, options.reduction * 100.0);
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use binmap_core::event::RunId;
+
+    fn run() -> RunId {
+        RunId("test-0001".into())
+    }
+
+    #[test]
+    fn a_fresh_printer_has_no_failure_to_report() {
+        assert_eq!(Printer::new().failure(), None);
+    }
+
+    #[test]
+    fn a_failed_event_is_remembered_so_the_caller_can_exit_nonzero() {
+        // The regression this guards: a sweep that failed before building
+        // anything printed an empty frontier and exited 0, which in CI reads
+        // exactly like success.
+        let printer = Printer::new();
+        printer.emit(EngineEvent::Failed {
+            run: run(),
+            error: "another binmap run is already working here".into(),
+        });
+
+        let failure = printer.failure().expect("a Failed event must be recorded");
+        assert!(failure.contains("already working"), "the reason is kept verbatim: {failure}");
+    }
+
+    #[test]
+    fn a_failure_is_also_terminal_so_a_waiting_caller_is_released() {
+        // Recording the reason is no use if `wait` never returns.
+        let printer = Printer::new();
+        printer.emit(EngineEvent::Failed { run: run(), error: "stopped".into() });
+        printer.wait();
+        assert!(printer.failure().is_some());
+    }
+
+    #[test]
+    fn a_run_that_finished_reports_no_failure() {
+        let printer = Printer::new();
+        printer.emit(EngineEvent::Finished {
+            run: run(),
+            summary: "96 configurations measured".into(),
+        });
+        printer.wait();
+        assert_eq!(printer.failure(), None, "a finished run has not failed");
     }
 }

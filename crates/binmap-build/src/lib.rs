@@ -11,6 +11,7 @@ pub mod attribute;
 pub mod cargo;
 pub mod engine;
 pub mod environment;
+pub mod lock;
 pub mod project;
 pub mod settings;
 pub mod sweep;
