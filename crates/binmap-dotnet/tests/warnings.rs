@@ -172,3 +172,25 @@ fn every_warning_describes_itself_in_one_readable_line() {
         assert!(described.contains(&warning.code));
     }
 }
+
+#[test]
+fn msbuilds_project_trailer_is_stripped_from_the_message() {
+    // `[/path/to/the.csproj]` is appended to every warning in a multi-project
+    // build. It is identical on every line, so it is noise in a list and
+    // carries nothing the file path does not.
+    let warnings = parse("/x/A.cs(9,1): warning IL2026: Using member 'Foo.Bar()'. [/x/App.csproj]");
+    assert_eq!(warnings.warnings[0].message, "Using member 'Foo.Bar()'.");
+    assert!(!warnings.warnings[0].describe().contains(".csproj"));
+}
+
+#[test]
+fn a_message_that_legitimately_ends_in_a_bracket_is_not_truncated() {
+    // A generic type's message ends in `]`, and stripping blindly would eat
+    // part of the type name.
+    let warnings = parse("/x/A.cs(9,1): warning IL2026: Using member 'Foo.Bar(System.Int32[])'");
+    assert!(
+        warnings.warnings[0].message.ends_with("System.Int32[])'"),
+        "{}",
+        warnings.warnings[0].message
+    );
+}

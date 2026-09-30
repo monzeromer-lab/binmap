@@ -90,6 +90,13 @@ enum Command {
     Acceptance3(Acceptance3Options),
     /// Read a V8 CPU profile and map it back to TypeScript.
     V8(V8Options),
+    /// Read an ILC dependency graph and say why an item is in the binary.
+    ///
+    /// Phase 2.5's differentiator: DWARF says what is in a binary and cannot
+    /// say why the linker kept it.
+    Dgml(DgmlOptions),
+    /// Read trim and AOT warnings out of a .NET build log.
+    TrimWarnings(TrimOptions),
     /// Report what this machine can and cannot do.
     ///
     /// Every backend's preflight in one place: `perf` for profiling, `rr` for
@@ -130,6 +137,21 @@ struct V8Options {
     /// Show every function rather than only the reader's own code.
     #[arg(long)]
     all: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+struct DgmlOptions {
+    /// The `.dgml` ILC writes with `<IlcGenerateDgmlFile>true</…>`.
+    graph: PathBuf,
+    /// An item to explain. Without one, the largest roots are listed.
+    #[arg(long)]
+    why: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+struct TrimOptions {
+    /// A file holding `dotnet publish` output.
+    log: PathBuf,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -248,6 +270,8 @@ fn main() -> ExitCode {
         Command::Acceptance3(options) => acceptance_phase_three(options),
         Command::V8(options) => v8(options),
         Command::Ready(options) => ready(options),
+        Command::Dgml(options) => dgml(options),
+        Command::TrimWarnings(options) => trim_warnings(options),
     };
 
     match result {
@@ -1675,5 +1699,69 @@ fn ready(options: &Options) -> Result<bool, String> {
         "\nrecording is {}available on this machine.",
         if replay.can_record() { "" } else { "not " }
     );
+    Ok(true)
+}
+
+/// Read an ILC dependency graph (`TOOLING-DOTNET §2`).
+fn dgml(options: &DgmlOptions) -> Result<bool, String> {
+    let raw = std::fs::read(&options.graph)
+        .map_err(|error| format!("could not read {}: {error}", options.graph.display()))?;
+    let graph = binmap_dotnet::dgml::read(&raw).map_err(|error| error.to_string())?;
+    println!("{}", graph.describe());
+
+    if let Some(wanted) = &options.why {
+        // Accept a label as well as an id: nobody reads a DGML to find out
+        // that node 4817 is present.
+        let id = graph
+            .items
+            .values()
+            .find(|item| item.id == *wanted || item.label == *wanted)
+            .map(|item| item.id.clone())
+            .ok_or_else(|| format!("nothing in this graph is called `{wanted}`"))?;
+
+        println!("\nwhy {wanted} is in the binary:");
+        println!("{}", graph.explain(&id));
+
+        let kept = graph.kept_by(&id);
+        if !kept.is_empty() {
+            println!("\nand it keeps {} items, including:", kept.len());
+            for item in kept.iter().take(8) {
+                println!("  {}", item.label);
+            }
+        }
+        return Ok(true);
+    }
+
+    println!("\nroots:");
+    for root in graph.roots().iter().take(15) {
+        println!("  {} (keeps {})", root.label, graph.kept_by(&root.id).len());
+    }
+    println!("\nPass --why <item> to see why something survived trimming.");
+    Ok(true)
+}
+
+/// Read trim and AOT warnings as findings (`TOOLING-DOTNET §5`).
+fn trim_warnings(options: &TrimOptions) -> Result<bool, String> {
+    let log = std::fs::read_to_string(&options.log)
+        .map_err(|error| format!("could not read {}: {error}", options.log.display()))?;
+    let warnings = binmap_dotnet::warnings::parse(&log);
+
+    println!("{}", warnings.describe());
+    if warnings.warnings.is_empty() {
+        return Ok(true);
+    }
+
+    println!();
+    for warning in &warnings.warnings {
+        println!("  ◈ {}", warning.describe());
+        println!("    {}", warning.remedy());
+    }
+
+    // An AOT warning means the published binary will fail at the point it
+    // runs, which is a different thing from a build being larger than it
+    // needs to be.
+    if warnings.blocks_aot() {
+        println!("\nAOT warnings present: the published binary will fail where these run.");
+    }
     Ok(true)
 }

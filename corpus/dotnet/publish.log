@@ -1,0 +1,9 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  App -> /home/x/App/bin/Release/net9.0/App.dll
+/home/x/App/Serialization/Serializer.cs(28,16): warning IL2026: Using member 'System.Text.Json.JsonSerializer.Serialize(Object, Type)' which has 'RequiresUnreferencedCodeAttribute' can break functionality when trimming application code. [/home/x/App/App.csproj]
+/home/x/App/Serialization/Serializer.cs(28,16): warning IL3050: Using member 'System.Text.Json.JsonSerializer.Serialize(Object, Type)' which has 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling. [/home/x/App/App.csproj]
+/home/x/App/Plugins/Loader.cs(51,22): warning IL2057: Unrecognized value passed to the parameter 'typeName' of method 'System.Type.GetType(String)'. [/home/x/App/App.csproj]
+/home/x/App/Plugins/Loader.cs(64,9): warning IL2075: 'this' argument does not satisfy 'DynamicallyAccessedMembersAttribute' in call to 'System.Type.GetMethod(String)'. [/home/x/App/App.csproj]
+  App -> /home/x/App/bin/Release/net9.0/linux-x64/publish/
+Build succeeded.

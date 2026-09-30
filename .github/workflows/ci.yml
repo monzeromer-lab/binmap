@@ -150,6 +150,36 @@ jobs:
       - name: Phase 2 acceptance criterion
         run: cargo run --release -p binmap-eval -- acceptance2
 
+  dotnet:
+    name: Phase 2.5 — the C# backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The fixtures are the shapes TOOLING-DOTNET documents, not output from
+      # a real SDK — stated in corpus/dotnet/README.md rather than implied.
+      - name: Why is this in the binary
+        run: |
+          cargo run --release -p binmap-eval -- \
+            dgml corpus/dotnet/example.dgml --why App.Models.Widget | tee /tmp/dgml.out
+          grep -q "Reflection" /tmp/dgml.out \
+            || { echo "::error::the reflection edge was not reported"; exit 1; }
+
+      - name: Trim and AOT warnings become findings
+        run: |
+          cargo run --release -p binmap-eval -- \
+            trim-warnings corpus/dotnet/publish.log | tee /tmp/trim.out
+          grep -q "JsonSerializerContext" /tmp/trim.out \
+            || { echo "::error::IL3050 did not name its remedy"; exit 1; }
+
+      - name: C# backend tests
+        run: cargo test --release -p binmap-dotnet
+
+      - name: Replay preflight tests
+        run: cargo test --release -p binmap-replay
+
   perf:
     name: Phase 3 — performance attribution
     runs-on: ubuntu-latest

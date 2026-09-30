@@ -17,6 +17,7 @@ binmap-core = { workspace = true }
 binmap-binary = { workspace = true }
 binmap-agent = { workspace = true }
 binmap-crash = { workspace = true }
+binmap-dotnet = { workspace = true }
 binmap-perf = { workspace = true }
 binmap-replay = { workspace = true }
 binmap-web = { workspace = true }

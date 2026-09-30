@@ -202,7 +202,15 @@ pub fn parse(output: &str) -> Warnings {
             None => (Some(location.trim().to_string()).filter(|p| !p.is_empty()), None, None),
         };
 
-        let message = message.trim().to_string();
+        // MSBuild appends `[/path/to/the.csproj]` to every warning in a
+        // multi-project build. It is the same on every line, so it is noise
+        // in a list and carries nothing the file path does not.
+        let message = message.trim();
+        let message = match message.rfind(" [") {
+            Some(at) if message.ends_with(']') => message[..at].trim(),
+            _ => message,
+        }
+        .to_string();
         warnings.push(Warning {
             code: code.to_string(),
             kind,

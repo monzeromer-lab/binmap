@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A small ILC dependency graph in the documented shape. Not produced by a
+     real ILC — there is no .NET SDK on this machine — but shaped as §2
+     describes, so the reader can be exercised end to end.
+
+     The chain it exists to demonstrate: nobody asked for `Widget` to be in
+     the binary. `Main` calls `Serialize`, `Serialize` reflects over its
+     argument, and that reflection is why trimming could not remove `Widget`
+     or its constructor. That question is the one DWARF cannot answer. -->
+<DirectedGraph xmlns="http://schemas.microsoft.com/vs/2009/dgml">
+  <Nodes>
+    <Node Id="1" Label="App.Program::Main(System.String[])" />
+    <Node Id="2" Label="App.Serialization.Serializer::Serialize(System.Object)" />
+    <Node Id="3" Label="App.Models.Widget" />
+    <Node Id="4" Label="App.Models.Widget::.ctor()" />
+    <Node Id="5" Label="App.Models.Widget::get_Name()" />
+    <Node Id="6" Label="System.Text.Json.JsonSerializer::Serialize(System.Object,System.Type)" />
+    <Node Id="7" Label="App.Diagnostics.NeverCalled::Report()" />
+  </Nodes>
+  <Links>
+    <Link Source="1" Target="2" Label="Direct Call" />
+    <Link Source="2" Target="6" Label="Direct Call" />
+    <Link Source="6" Target="3" Label="Reflection" />
+    <Link Source="3" Target="4" Label="Constructed Type" />
+    <Link Source="3" Target="5" Label="Reflectable Method" />
+  </Links>
+</DirectedGraph>

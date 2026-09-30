@@ -836,6 +836,7 @@ dependencies = [
  "binmap-build",
  "binmap-core",
  "binmap-crash",
+ "binmap-dotnet",
  "binmap-measure",
  "binmap-perf",
  "binmap-replay",
