@@ -792,6 +792,7 @@ dependencies = [
  "binmap-measure",
  "binmap-session",
  "binmap-verify",
+ "binmap-web",
  "clap",
  "serde_json",
 ]

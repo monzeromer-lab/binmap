@@ -267,3 +267,47 @@ fn a_fallback_says_what_it_could_not_use() {
     assert!(described.contains("source maps"), "{described}");
     assert!(described.contains("no metafile"), "{described}");
 }
+
+#[test]
+fn an_unmapped_trailing_line_belongs_to_nobody() {
+    // The `//# sourceMappingURL=` comment sits on its own line that no segment
+    // covers. Letting the last segment run to the end of the file attributed
+    // it — 9% of the corpus bundle — to whichever source happened to be last,
+    // silently and to a real file.
+    let generated = b"code\n//# sourceMappingURL=x.map\n".to_vec();
+    let map = json!({
+        "version": 3,
+        "file": "out.js",
+        "sources": ["a.ts"],
+        "names": [],
+        "mappings": "AAAA"
+    })
+    .to_string()
+    .into_bytes();
+
+    let attribution = attribute(&generated, &map).expect("valid");
+    assert_eq!(attribution.sources[0].bytes, 5, "the mapped line, including its newline");
+    assert_eq!(
+        attribution.unattributed_bytes,
+        generated.len() as u64 - 5,
+        "everything after the mapped line is nobody's"
+    );
+    assert!(attribution.coverage() < 1.0);
+}
+
+#[test]
+fn a_real_bundles_coverage_excludes_its_source_mapping_comment() {
+    let Some((asset, map)) = built_asset("index.js") else { return };
+    let attribution = attribute(&asset, &map).unwrap();
+
+    assert!(
+        attribution.unattributed_bytes > 0,
+        "the sourceMappingURL comment is not authored code, so it is not attributed"
+    );
+    assert!(
+        attribution.coverage() < 1.0,
+        "100% coverage on a bundle with a trailing comment means the comment was absorbed"
+    );
+    // But most of it is still traced: this is a fallback, not a failure.
+    assert!(attribution.coverage() > 0.8, "coverage was {:.3}", attribution.coverage());
+}

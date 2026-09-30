@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 binmap-core = { workspace = true }
 binmap-binary = { workspace = true }
+binmap-web = { workspace = true }
 binmap-build = { workspace = true }
 binmap-measure = { workspace = true }
 binmap-session = { workspace = true }

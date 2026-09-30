@@ -13,6 +13,7 @@
 //! instead of offering a button that fails.
 
 pub mod metafile;
+pub mod project;
 pub mod size;
 pub mod sourcemap;
 pub mod tier;

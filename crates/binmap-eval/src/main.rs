@@ -69,6 +69,21 @@ enum Command {
     Reason(ReasonOptions),
     /// List the reasoners this project offers, and why any are unavailable.
     Reasoners(Options),
+    /// Attribute a web bundle: three sizes, per chunk, initial load first.
+    ///
+    /// Phase 1.5. Takes a project root holding a `package.json`.
+    Web(WebOptions),
+}
+
+#[derive(Args, Debug, Clone)]
+struct WebOptions {
+    /// The project to open.
+    root: PathBuf,
+    /// Compress as a server would on the fly rather than as a CDN serving
+    /// precompressed assets. The gap between the two is the most common way a
+    /// transfer-size claim turns out to be wrong.
+    #[arg(long)]
+    on_the_fly: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -120,6 +135,10 @@ struct Options {
     reduction: f64,
 }
 
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match &cli.command {
@@ -132,6 +151,7 @@ fn main() -> ExitCode {
         Command::Acceptance1(options) => acceptance_phase_one(options),
         Command::Reason(options) => reason(options),
         Command::Reasoners(options) => reasoners(options),
+        Command::Web(options) => web(options),
     };
 
     match result {
@@ -763,52 +783,107 @@ fn truncate(text: &str, limit: usize) -> String {
     format!("{kept}…")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use binmap_core::event::RunId;
+/// Attribute a web bundle (Phase 1.5).
+///
+/// Leads with the initial load rather than the total, because `TOOLING-WEB
+/// §4.2` is that a route nobody visits costs nobody anything and a headline
+/// summing everything makes code splitting look like it achieved less than it
+/// did.
+fn web(options: &WebOptions) -> Result<bool, String> {
+    let project = binmap_web::project::discover(&options.root).map_err(|e| e.to_string())?;
 
-    fn run() -> RunId {
-        RunId("test-0001".into())
+    println!("{}", project.describe());
+    println!("  {}", project.detection.describe());
+
+    let Some(directory) = &project.output_directory else {
+        // Not a failure: an unbuilt project is a normal state, and saying so
+        // beats reporting zero bytes as though it were a measurement.
+        println!("\nnothing is built yet, so there is nothing to measure");
+        return Ok(false);
+    };
+
+    // --- three numbers per asset (§4) --------------------------------------
+    let settings = if options.on_the_fly {
+        binmap_web::CompressionSettings::on_the_fly()
+    } else {
+        binmap_web::CompressionSettings::default()
+    };
+    println!("\nassets ({}):", settings.describe());
+
+    let mut raw_total = 0u64;
+    let mut transfer_total = 0u64;
+    for asset in &project.assets {
+        let bytes = std::fs::read(&asset.path)
+            .map_err(|error| format!("could not read {}: {error}", asset.path.display()))?;
+        let size = binmap_web::measure(&bytes, settings).map_err(|e| e.to_string())?;
+        raw_total += size.raw;
+        transfer_total += size.transfer();
+
+        println!(
+            "  {:<34} {:>8} raw  {:>8} gzip  {:>8} brotli{}",
+            asset.path.file_name().unwrap_or_default().to_string_lossy(),
+            size.raw,
+            size.gzip,
+            size.brotli,
+            if size.looks_incompressible() { "  (already compressed)" } else { "" }
+        );
+    }
+    println!("  {:<34} {raw_total:>8} raw  {transfer_total:>8} transfer", "total");
+
+    // --- per chunk, initial load first (§4.2) ------------------------------
+    if let Some(metafile) = &project.metafile {
+        let raw = std::fs::read(metafile).map_err(|e| e.to_string())?;
+        let attribution = binmap_web::metafile::attribute(&raw).map_err(|e| e.to_string())?;
+
+        println!("\nchunks:");
+        for chunk in &attribution.chunks {
+            println!("  {:<8} {:<30} {:>8} bytes", chunk.load.label(), chunk.path, chunk.bytes);
+        }
+        println!(
+            "\ninitial load: {} bytes; behind a dynamic import: {} bytes",
+            attribution.initial_load_bytes(),
+            attribution.lazy_bytes()
+        );
+
+        println!("\ntop modules:");
+        for module in attribution.modules().iter().take(10) {
+            println!(
+                "  {:<44} {:>8} bytes  [{}]",
+                truncate(&module.module, 44),
+                module.bytes,
+                module.package.as_deref().unwrap_or("your code")
+            );
+        }
+
+        println!("\nby package:");
+        for (package, bytes) in attribution.packages().iter().take(8) {
+            println!("  {package:<34} {bytes:>8} bytes");
+        }
+
+        // Why the largest module is here — the question source maps cannot
+        // answer, and the reason this tier is worth preferring.
+        if let Some(largest) = attribution.modules().first() {
+            println!("\nwhy {} is in the bundle:", largest.module);
+            println!("  {}", attribution.explain(&largest.module));
+        }
+    } else if project.assets.iter().any(|asset| asset.map.is_some()) {
+        // Source maps: the fallback that always works.
+        println!("\nattributed from source maps:");
+        for asset in project.assets.iter().filter(|asset| asset.map.is_some()) {
+            let bytes = std::fs::read(&asset.path).map_err(|e| e.to_string())?;
+            let map =
+                std::fs::read(asset.map.as_ref().expect("filtered")).map_err(|e| e.to_string())?;
+            let attribution =
+                binmap_web::sourcemap::attribute(&bytes, &map).map_err(|e| e.to_string())?;
+
+            println!("  {}", asset.path.file_name().unwrap_or_default().to_string_lossy());
+            println!("    {}", attribution.describe());
+            for source in attribution.sources.iter().take(6) {
+                println!("      {:<44} {:>8} bytes", truncate(&source.source, 44), source.bytes);
+            }
+        }
     }
 
-    #[test]
-    fn a_fresh_printer_has_no_failure_to_report() {
-        assert_eq!(Printer::new().failure(), None);
-    }
-
-    #[test]
-    fn a_failed_event_is_remembered_so_the_caller_can_exit_nonzero() {
-        // The regression this guards: a sweep that failed before building
-        // anything printed an empty frontier and exited 0, which in CI reads
-        // exactly like success.
-        let printer = Printer::new();
-        printer.emit(EngineEvent::Failed {
-            run: run(),
-            error: "another binmap run is already working here".into(),
-        });
-
-        let failure = printer.failure().expect("a Failed event must be recorded");
-        assert!(failure.contains("already working"), "the reason is kept verbatim: {failure}");
-    }
-
-    #[test]
-    fn a_failure_is_also_terminal_so_a_waiting_caller_is_released() {
-        // Recording the reason is no use if `wait` never returns.
-        let printer = Printer::new();
-        printer.emit(EngineEvent::Failed { run: run(), error: "stopped".into() });
-        printer.wait();
-        assert!(printer.failure().is_some());
-    }
-
-    #[test]
-    fn a_run_that_finished_reports_no_failure() {
-        let printer = Printer::new();
-        printer.emit(EngineEvent::Finished {
-            run: run(),
-            summary: "96 configurations measured".into(),
-        });
-        printer.wait();
-        assert_eq!(printer.failure(), None, "a finished run has not failed");
-    }
+    let _ = directory;
+    Ok(true)
 }

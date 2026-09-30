@@ -121,26 +121,34 @@ pub fn attribute(generated: &[u8], map: &[u8]) -> Result<SourceAttribution> {
     // Collect every segment as an absolute offset, then sort: segments arrive
     // grouped by generated line, and the span of one runs to whichever comes
     // next in the file.
-    let mut points: Vec<(usize, Option<u32>)> = Vec::new();
+    let mut points: Vec<(usize, usize, Option<u32>)> = Vec::new();
     for token in decoded.tokens() {
-        let offset = offset_of(&line_starts, token.get_dst_line(), token.get_dst_col(), generated);
+        let line = token.get_dst_line();
+        let offset = offset_of(&line_starts, line, token.get_dst_col(), generated);
+        // Where this segment's line ends. A segment cannot run past it: lines
+        // carrying no mapping at all belong to nobody, and the trailing
+        // `//# sourceMappingURL=` comment is exactly such a line. Letting the
+        // last segment run to the end of the file attributed that comment —
+        // 9% of this corpus bundle — to whichever source happened to be last.
+        let line_end = line_starts.get(line as usize + 1).copied().unwrap_or(generated.len());
         // `has_source` rather than comparing against the `!0` sentinel: a
         // segment may legitimately map to no source, and treating u32::MAX as
         // a source index would invent one.
-        points.push((offset, token.has_source().then(|| token.get_src_id())));
+        points.push((offset, line_end, token.has_source().then(|| token.get_src_id())));
     }
-    points.sort_by_key(|(offset, _)| *offset);
-    points.dedup_by_key(|(offset, _)| *offset);
+    points.sort_by_key(|(offset, _, _)| *offset);
+    points.dedup_by_key(|(offset, _, _)| *offset);
 
     let mut bytes_by_source: BTreeMap<u32, (u64, u32)> = BTreeMap::new();
     let mut attributed = 0u64;
 
-    for (index, (offset, source)) in points.iter().enumerate() {
-        // The span runs to the next segment, or to the end of the asset for
-        // the last one. Stopping at the end of the line instead would silently
-        // lose the tail of every line in a minified bundle, where one line can
-        // be the whole file.
-        let end = points.get(index + 1).map(|(next, _)| *next).unwrap_or(generated.len());
+    for (index, (offset, line_end, source)) in points.iter().enumerate() {
+        // The span runs to the next segment, so the tail of a line is not
+        // lost — in a minified bundle one line can be the whole file. But it
+        // never runs past the end of its own line, because the next segment
+        // may be several lines away and everything between belongs to nobody.
+        let next = points.get(index + 1).map(|(next, _, _)| *next).unwrap_or(generated.len());
+        let end = next.min(*line_end);
         let span = end.saturating_sub(*offset) as u64;
 
         // Bytes before the first segment belong to nobody, and so do bytes a

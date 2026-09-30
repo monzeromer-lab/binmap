@@ -94,3 +94,31 @@ jobs:
 
       - name: The provider table is listable
         run: cargo run --release -p binmap-eval -- reasoners corpus/stress
+
+  web:
+    name: Phase 1.5 — the web backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The web tests run against output from a real bundler rather than a
+      # fixture written to pass them. Two of the bugs they caught — esbuild
+      # marking a lazily imported chunk as an entry point, and an unmapped
+      # trailing line being absorbed into the last source — were only visible
+      # against a real build.
+      - name: Build the web corpus
+        working-directory: corpus/web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build:split
+
+      - name: Attribute the bundle
+        run: cargo run --release -p binmap-eval -- web corpus/web
+
+      - name: Web backend tests
+        run: cargo test --release -p binmap-web
