@@ -5,6 +5,7 @@ members = [
     "crates/binmap-core",
     "crates/binmap-verify",
     "crates/binmap-agent",
+    "crates/binmap-web",
     "crates/binmap-binary",
     "crates/binmap-build",
     "crates/binmap-measure",
@@ -33,6 +34,7 @@ addr2line = "0.26"
 binmap-core = { path = "crates/binmap-core" }
 binmap-verify = { path = "crates/binmap-verify" }
 binmap-agent = { path = "crates/binmap-agent" }
+binmap-web = { path = "crates/binmap-web" }
 binmap-binary = { path = "crates/binmap-binary" }
 binmap-build = { path = "crates/binmap-build" }
 binmap-measure = { path = "crates/binmap-measure" }
@@ -56,6 +58,12 @@ fs4 = { version = "0.13", default-features = false, features = ["sync"] }
 # reqwest because reqwest would pull an async runtime into the engine for a
 # request the loop makes one at a time and waits for anyway. TLS is rustls
 # rather than the platform store so the build does not depend on OpenSSL.
+# TOOLING-WEB §2.1 is explicit that hand-rolling a VLQ decoder is a false
+# economy: index maps, relative resolution and one-versus-zero-based line
+# conventions across producers are exactly the edge cases that get missed.
+sourcemap = "9"
+flate2 = "1"
+brotli = "8"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 toml_edit = "0.25.13"
 similar = "3.2.0"

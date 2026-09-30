@@ -4,3 +4,9 @@ corpus/*/target
 corpus/*/*/target
 proptest-regressions/
 crates/*/tests/*.proptest-regressions
+
+# The web corpus builds into dist/ and installs esbuild into node_modules/.
+# Both are reproducible from package.json, and dist/ holds a hashed chunk name
+# that changes with the content.
+corpus/web/node_modules/
+corpus/web/dist/

@@ -1,0 +1,14 @@
+{
+  "name": "binmap-corpus-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A purpose-built web target: enough shape to exercise source maps, chunk splitting and compression locality, and small enough to build in seconds.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --minify --sourcemap --format=esm --outdir=dist --metafile=dist/meta.json",
+    "build:split": "esbuild src/index.ts --bundle --minify --sourcemap --format=esm --splitting --outdir=dist --metafile=dist/meta.json"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
