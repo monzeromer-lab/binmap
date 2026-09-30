@@ -635,3 +635,24 @@ fn a_frame_is_yours_only_when_it_is_in_one_of_your_crates() {
         !StackEntry { function: None, ..entry(0, "x", Some(1), false) }.is_probably_yours(&own)
     );
 }
+
+#[test]
+fn a_gate_name_is_bounded_so_its_column_can_be_too() {
+    // The Profile Lab gives the gate name a fixed-width column and lets the
+    // detail shrink. That only works if the names are bounded — and
+    // `qualified_label()` is not: with a configuration it becomes
+    // `BenchmarkNotWorse { significance: 0.01 }`, forty characters, which in a
+    // fixed column does not truncate. It wraps one character per line and
+    // turns one row into forty. Seen by running the app.
+    use binmap_core::gate::Gate;
+
+    for gate in Gate::ALL {
+        let label = gate.label();
+        assert!(
+            label.len() <= 20,
+            "{label} is {} characters, which will not fit the gate column",
+            label.len()
+        );
+        assert!(!label.contains(' '), "{label} should be one token");
+    }
+}

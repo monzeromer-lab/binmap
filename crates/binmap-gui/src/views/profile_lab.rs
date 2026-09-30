@@ -766,21 +766,37 @@ fn gate_rows(report: &VerificationReport, theme: Theme) -> impl IntoElement {
                     .items_center()
                     .gap(space::S6)
                     .child(div().flex_none().w(px(10.)).text_color(colour).child(glyph))
+                    // The gate name is a known, bounded string, so it gets the
+                    // fixed width; the detail is arbitrary, so it shrinks.
+                    // The other way round, a long detail squeezed
+                    // `BenchmarkNotWorse` to near-zero width — which does not
+                    // truncate, it wraps one character per line and turns one
+                    // row into seventeen.
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(152.))
+                            .font_family("JetBrains Mono")
+                            .text_size(type_scale::FS_11)
+                            .text_color(c.text_body)
+                            // The bare name, not `qualified_label()`: the
+                            // configuration can make that forty characters
+                            // long, and it belongs beside the detail rather
+                            // than in a column of names.
+                            .child(outcome.gate.label()),
+                    )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .font_family("JetBrains Mono")
-                            .text_size(type_scale::FS_11)
-                            .text_color(c.text_body)
-                            .child(outcome.qualified_label()),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
                             .text_size(type_scale::FS_11)
                             .text_color(c.text_muted)
-                            .child(outcome.detail.clone()),
+                            .child(match &outcome.parameters {
+                                Some(parameters) => {
+                                    format!("{} · {}", outcome.detail, parameters)
+                                }
+                                None => outcome.detail.clone(),
+                            }),
                     ),
             )
             // The sanitizer gap, and any other caveat, stated beside the pass
