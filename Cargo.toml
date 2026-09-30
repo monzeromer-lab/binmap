@@ -6,6 +6,7 @@ members = [
     "crates/binmap-verify",
     "crates/binmap-agent",
     "crates/binmap-crash",
+    "crates/binmap-perf",
     "crates/binmap-web",
     "crates/binmap-binary",
     "crates/binmap-build",
@@ -36,6 +37,7 @@ binmap-core = { path = "crates/binmap-core" }
 binmap-verify = { path = "crates/binmap-verify" }
 binmap-agent = { path = "crates/binmap-agent" }
 binmap-crash = { path = "crates/binmap-crash" }
+binmap-perf = { path = "crates/binmap-perf" }
 binmap-web = { path = "crates/binmap-web" }
 binmap-binary = { path = "crates/binmap-binary" }
 binmap-build = { path = "crates/binmap-build" }

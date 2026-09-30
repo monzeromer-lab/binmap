@@ -1,0 +1,19 @@
+[package]
+name = "binmap-perf"
+description = "Performance attribution: samples, flamegraphs and differential profiling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+binmap-core = { workspace = true }
+binmap-crash = { workspace = true }
+object = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = { workspace = true }

@@ -50,6 +50,14 @@ wrappers = ["binmap-build", "binmap-crash", "binmap-eval"]
 # first.
 [[bans.deny]]
 name = "binmap-crash"
+wrappers = ["binmap-eval", "binmap-perf"]
+
+# binmap-perf attributes samples. It reaches binmap-crash because `F3.2` says
+# samples go "through the same symbolization layer the crash analyzer uses" —
+# two implementations of that lookup would drift, and the inline handling,
+# which matters most to a profiler, would drift first.
+[[bans.deny]]
+name = "binmap-perf"
 wrappers = ["binmap-eval"]
 
 # And now binmap-agent, which was waiting for a dependent. A `deny` entry with

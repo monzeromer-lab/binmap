@@ -859,6 +859,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "binmap-perf"
+version = "0.1.0"
+dependencies = [
+ "binmap-core",
+ "binmap-crash",
+ "object 0.40.0",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "binmap-session"
 version = "0.1.0"
 dependencies = [
