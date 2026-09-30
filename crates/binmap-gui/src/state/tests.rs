@@ -454,3 +454,21 @@ fn the_budget_bar_never_leaves_its_track() {
         assert_eq!(cost.step_fraction(), expected, "{steps} of {max}");
     }
 }
+
+#[test]
+fn the_budget_meter_shows_a_real_budget_before_anything_has_run() {
+    // It read "0 of 0 steps", which says nothing and looks like a bug. Seen
+    // only by opening the panel.
+    let state = AppState::new();
+    let label = state.session_cost().label();
+    assert!(!label.contains("of 0 steps"), "a budget of zero is not a budget: {label}");
+    assert!(label.contains("of 25 steps"), "{label}");
+}
+
+#[test]
+fn a_meter_with_no_budget_at_all_omits_the_denominator() {
+    let cost = SessionCost { steps: 3, max_steps: 0, ..SessionCost::default() };
+    let label = cost.label();
+    assert!(label.contains("3 steps"), "{label}");
+    assert!(!label.contains("of 0"), "{label}");
+}

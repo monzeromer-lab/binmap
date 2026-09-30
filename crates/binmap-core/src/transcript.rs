@@ -360,13 +360,22 @@ fn clamp(text: &str, limit: usize) -> String {
     format!("{kept}…")
 }
 
+/// How many steps a session gets unless told otherwise (`DESIGN-AI §8`).
+///
+/// Here rather than beside the loop because the meter has to draw a budget
+/// before a session has run, and the interface cannot see `AgentConfig` —
+/// §2.4 forbids it depending on the crate that holds one. Two copies of this
+/// number would drift, and the meter would quietly describe a budget that was
+/// not the one being enforced.
+pub const DEFAULT_MAX_STEPS: u32 = 25;
+
 /// What a session spent, for the meter (`§9.3`).
 ///
 /// Display vocabulary only: the budget *logic* — which limit was passed, and
 /// what to do about it — stays with the loop in `binmap-agent`, because the
 /// interface does not decide when to stop. This is what the panel needs to draw
 /// a meter, and nothing more.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SessionCost {
     pub steps: u32,
     pub max_steps: u32,
@@ -377,6 +386,23 @@ pub struct SessionCost {
     /// says different things for the two.
     pub cost: Option<f64>,
     pub elapsed: Duration,
+}
+
+impl Default for SessionCost {
+    /// A meter with a real budget on it before anything has run.
+    ///
+    /// Defaulting `max_steps` to zero rendered "0 of 0 steps", which says
+    /// nothing and looks broken.
+    fn default() -> Self {
+        Self {
+            steps: 0,
+            max_steps: DEFAULT_MAX_STEPS,
+            input_tokens: 0,
+            output_tokens: 0,
+            cost: None,
+            elapsed: Duration::ZERO,
+        }
+    }
 }
 
 impl SessionCost {
@@ -401,11 +427,13 @@ impl SessionCost {
             Some(spent) => format!("${spent:.2}"),
             None => "free".to_string(),
         };
-        format!(
-            "{} of {} steps · {} tokens · {money}",
-            self.steps,
-            self.max_steps,
-            self.total_tokens()
-        )
+        // A budget of zero is not a budget; saying "0 of 0" would describe
+        // nothing while looking like a measurement.
+        let steps = if self.max_steps == 0 {
+            format!("{} steps", self.steps)
+        } else {
+            format!("{} of {} steps", self.steps, self.max_steps)
+        };
+        format!("{steps} · {} tokens · {money}", self.total_tokens())
     }
 }

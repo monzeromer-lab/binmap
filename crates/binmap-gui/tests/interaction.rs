@@ -31,6 +31,8 @@ fn opened(engine: &ScriptedEngine) -> AppState {
     let mut state = AppState::new();
     state.set_probes(engine.probe_environment());
     state.set_targets(engine.targets().unwrap());
+    // As `Binmap::new` does, so these tests exercise the real startup path.
+    state.set_reasoners(engine.reasoners());
     state.select_view(View::Target);
     state
 }
@@ -418,4 +420,100 @@ fn a_project_with_no_benchmark_says_runtime_is_not_an_objective() {
 
     let declared = ScriptedEngine::new().with_benchmark("cargo bench --bench route");
     assert_eq!(declared.benchmark_command().as_deref(), Some("cargo bench --bench route"));
+}
+
+// --- the Agent panel (`U1.3`) -----------------------------------------------
+
+use binmap_core::reasoner::{Mode, Reasoner, Unavailable};
+
+fn a_local_reasoner() -> Reasoner {
+    Reasoner {
+        id: "local/qwen3-coder".into(),
+        display: "Local · Qwen3 Coder".into(),
+        mode: Mode::Native,
+        cloud: false,
+        unavailable: None,
+        cost_per_mtok: None,
+    }
+}
+
+#[test]
+fn an_engine_with_no_model_layer_still_offers_the_deterministic_choice() {
+    // §9.1 lists "None" beside the others. An engine that offered nothing would
+    // leave the picker empty, which reads as a broken panel rather than as a
+    // product that works without a model.
+    let state = opened(&engine());
+    assert_eq!(state.reasoner().available.len(), 1);
+    assert_eq!(state.reasoner().selected, "none");
+    assert!(!state.can_reason());
+}
+
+#[test]
+fn choosing_a_reasoner_goes_through_the_same_action_a_click_produces() {
+    // The dispatch rule: a click and a key binding produce the same Action, so
+    // what the control does is testable without a window.
+    let engine = engine().with_reasoner(a_local_reasoner());
+    let mut state = opened(&engine);
+    assert_eq!(state.reasoner().available.len(), 2, "the local runner and None");
+
+    match Action::SelectReasoner("local/qwen3-coder".into()) {
+        Action::SelectReasoner(id) => assert!(state.select_reasoner(&id)),
+        other => panic!("unexpected action {other:?}"),
+    }
+    assert!(state.reasoner().uses_a_model());
+    assert!(state.can_reason(), "a target is selected by default, so asking is now possible");
+}
+
+#[test]
+fn asking_requests_a_reasoning_run_of_the_engine() {
+    // The panel does not reason; it asks the engine to. §2.4 is that the model
+    // may not lead an analysis, so the request goes through the facade.
+    let engine = engine().with_reasoner(a_local_reasoner());
+    let sink: Arc<dyn EventSink> = Arc::new(|_: EngineEvent| {});
+
+    engine
+        .start(
+            Request::Reason {
+                target: "app::app".into(),
+                question: "why is this large?".into(),
+                reasoner: "local/qwen3-coder".into(),
+            },
+            sink,
+        )
+        .expect("the scripted engine accepts the request");
+
+    let started = engine.started.lock().unwrap();
+    match started.last().expect("a run was requested") {
+        Request::Reason { target, reasoner, question } => {
+            assert_eq!(target, "app::app");
+            assert_eq!(reasoner, "local/qwen3-coder");
+            assert!(!question.is_empty(), "a question with no text asks nothing");
+        }
+        other => panic!("expected a Reason request, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_unavailable_reasoner_cannot_be_chosen_and_says_why() {
+    let unavailable = Reasoner {
+        unavailable: Some(Unavailable::NoCredential { variable: "OPENAI_API_KEY".into() }),
+        cloud: true,
+        ..a_local_reasoner()
+    };
+    let engine = engine().with_reasoner(unavailable);
+    let mut state = opened(&engine);
+
+    assert!(!state.select_reasoner("local/qwen3-coder"));
+    let refusal = state.reasoner_refusal().expect("the panel needs the reason");
+    assert!(refusal.contains("OPENAI_API_KEY"), "it names the variable to set: {refusal}");
+    assert!(!state.can_reason());
+}
+
+#[test]
+fn the_agent_view_is_offered_whatever_the_target_can_do() {
+    // Reasoning is not a capability of the artifact: a target that cannot even
+    // be attributed can still be asked about. The nav rail must not hide it.
+    let state = opened(&engine());
+    let views: Vec<View> = state.nav_entries().into_iter().map(|e| e.view).collect();
+    assert!(views.contains(&View::Agent), "got {views:?}");
 }

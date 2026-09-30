@@ -38,6 +38,9 @@ pub struct ScriptedEngine {
     pub exports: Mutex<Vec<String>>,
     benchmark: Option<String>,
     attribution: Mutex<Option<binmap_core::attribution::Attribution>>,
+    /// What the picker is offered. Empty means only the deterministic choice,
+    /// which is what an engine with no model layer has.
+    reasoners: Vec<binmap_core::reasoner::Reasoner>,
 }
 
 impl Default for ScriptedEngine {
@@ -61,7 +64,14 @@ impl ScriptedEngine {
             exports: Mutex::new(Vec::new()),
             benchmark: None,
             attribution: Mutex::new(None),
+            reasoners: Vec::new(),
         }
+    }
+
+    /// Offer a reasoner to the picker.
+    pub fn with_reasoner(mut self, reasoner: binmap_core::reasoner::Reasoner) -> Self {
+        self.reasoners.push(reasoner);
+        self
     }
 
     /// A target that can only be swept — Phase 0's real shape, and the one
@@ -177,6 +187,14 @@ impl Engine for ScriptedEngine {
 
     fn probe_environment(&self) -> Vec<Probe> {
         self.probes.clone()
+    }
+
+    fn reasoners(&self) -> Vec<binmap_core::reasoner::Reasoner> {
+        // Always with "None" last, as the real table does: §9.1 lists the
+        // deterministic choice beside the others rather than hiding it.
+        let mut offered = self.reasoners.clone();
+        offered.push(binmap_core::reasoner::Reasoner::none());
+        offered
     }
 
     fn start(

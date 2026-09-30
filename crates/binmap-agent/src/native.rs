@@ -43,7 +43,7 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            max_steps: 25,
+            max_steps: binmap_core::transcript::DEFAULT_MAX_STEPS,
             max_tokens: 200_000,
             max_wall_time: Duration::from_secs(300),
             max_cost: Some(1.0),

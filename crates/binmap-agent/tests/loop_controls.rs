@@ -500,3 +500,14 @@ fn a_quoted_or_bulleted_hypothesis_is_still_found() {
         assert_eq!(parsed.refuted_by, "small fmt symbols");
     }
 }
+
+#[test]
+fn the_loops_default_budget_is_the_one_the_meter_draws() {
+    // Two copies of this number would drift, and the meter would quietly
+    // describe a budget that was not the one being enforced.
+    assert_eq!(
+        AgentConfig::default().max_steps,
+        binmap_core::transcript::DEFAULT_MAX_STEPS,
+        "the loop and the meter must agree on the step budget"
+    );
+}
