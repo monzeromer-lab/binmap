@@ -742,6 +742,7 @@ dependencies = [
  "binmap-core",
  "binmap-session",
  "gpui-kit",
+ "proptest",
  "serde",
  "serde_json",
 ]

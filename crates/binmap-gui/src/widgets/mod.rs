@@ -7,7 +7,9 @@
 pub mod badge;
 pub mod panel;
 pub mod provenance;
+pub mod squarify;
 
 pub use badge::{Badge, Tone};
 pub use panel::{Section, eyebrow};
 pub use provenance::ProvenanceBadge;
+pub use squarify::{Tile, cull, hit, squarify};
