@@ -7,13 +7,26 @@
 //! intelligence emits a structured question, and orchestration decides whether
 //! to answer it with a model.
 //!
-//! In Phase 0 the backend is null: the registry and the evidence store exist,
-//! and nothing calls a model. That is not a stub — it is the configuration §7
-//! asks for, and the suite runs under it, which is what keeps the
-//! deterministic core deterministic.
+//! The null backend is not a stub, it is a configuration `§6.1` lists beside
+//! the real ones, and the entire test suite runs on it. That is what keeps the
+//! deterministic core deterministic: a test that could reach a model would not
+//! be a test. Phase 1 adds the OpenAI-compatible backend, which covers every
+//! provider in the table except Claude, and the loop that drives it.
 
+pub mod backend;
 pub mod gate;
+pub mod native;
+pub mod openai;
+pub mod provider;
 pub mod registry;
+pub mod transcript;
 
+pub use backend::{
+    CompletionRequest, CompletionResponse, Message, ModelBackend, NullBackend, Role, Usage,
+};
 pub use gate::{Claim, Gate, Rejection};
+pub use native::{AgentConfig, Session, SessionOutcome, Spend};
+pub use openai::{HttpTransport, OpenAiCompatibleBackend, UnavailableTransport};
+pub use provider::{ApiShape, Capabilities, PROVIDERS, ProviderSpec, Quirks};
 pub use registry::{Registry, Tool, ToolCall, ToolOutcome};
+pub use transcript::{Origin, StopReason, Transcript, TranscriptEvent};
