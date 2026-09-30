@@ -292,12 +292,13 @@ pub trait Engine: Send + Sync {
     /// showing a blank number.
     fn benchmark_command(&self) -> Option<String>;
 
-    /// The most recent size attribution, as JSON.
+    /// The most recent size attribution.
     ///
-    /// Opaque to this crate on purpose: the shape belongs to `binmap-binary`,
-    /// and `binmap-gui` must not gain a dependency on it to render the Size
-    /// Explorer (§2.4). The interface deserializes what it needs.
-    fn attribution(&self) -> Option<serde_json::Value>;
+    /// The shape lives in this crate rather than in `binmap-binary`, so the
+    /// interface can render it without gaining a dependency on the crate that
+    /// reads ELF files — the same split as the gate vocabulary, and for the
+    /// same reason (§2.4).
+    fn attribution(&self) -> Option<crate::attribution::Attribution>;
 
     /// Every sweep this session has run or restored.
     ///

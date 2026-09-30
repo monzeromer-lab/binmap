@@ -11,6 +11,7 @@ pub mod flow;
 pub mod inspector;
 pub mod palette;
 pub mod profile_lab;
+pub mod size;
 pub mod targets;
 
 pub use chrome::{NavRail, StatusBar, TitleBar};

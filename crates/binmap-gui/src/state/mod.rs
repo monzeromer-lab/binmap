@@ -401,6 +401,8 @@ pub enum Action {
     SelectTab(InspectorTab),
     /// Sweep the selected target's configuration matrix.
     StartSweep,
+    /// Attribute the selected target's bytes.
+    AttributeSize,
     /// Stop the run in flight, keeping everything it measured.
     Cancel,
     /// `U11`: dark and light.
@@ -580,6 +582,17 @@ impl AppState {
                 group: "Analysis",
                 shortcut: Some("Esc"),
                 action: Action::Cancel,
+            });
+        }
+        if self
+            .selected_target()
+            .is_some_and(|target| target.capabilities.has(Capability::SizeAttribution))
+        {
+            commands.push(Command {
+                label: "Attribute size to crates, categories and generics".into(),
+                group: "Analysis",
+                shortcut: Some("⌘⇧S"),
+                action: Action::AttributeSize,
             });
         }
         commands.push(Command {

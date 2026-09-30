@@ -124,11 +124,9 @@ fn size(options: &Options) -> Result<bool, String> {
         .map_err(|error| error.to_string())?;
     events.wait();
 
-    let Some(value) = engine.attribution() else {
+    let Some(attribution) = engine.attribution() else {
         return Ok(false);
     };
-    let attribution: binmap_binary::attribution::Attribution =
-        serde_json::from_value(value).map_err(|error| error.to_string())?;
 
     println!();
     println!("by category:");

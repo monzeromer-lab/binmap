@@ -12,6 +12,7 @@
 //!   tool output it describes is returned to anyone.
 
 pub mod artifact;
+pub mod attribution;
 pub mod capability;
 pub mod config;
 pub mod configuration;
@@ -31,6 +32,7 @@ pub use finding::{Confidence, Finding, FindingKind, Impact, Provenance};
 pub use location::Location;
 
 pub use artifact::{ArtifactSize, Section};
+pub use attribution::{Attribution, Driver, Group, Monomorphization};
 pub use capability::{Capabilities, Capability};
 pub use config::{ProjectConfig, SweepMatrix, TrustTier};
 pub use configuration::BuildConfiguration;

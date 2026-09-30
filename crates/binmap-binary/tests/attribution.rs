@@ -1,5 +1,6 @@
 use binmap_binary::attribution::*;
 use binmap_binary::symbols::{Sizing, Symbol, SymbolTable};
+use binmap_core::attribution::Driver;
 
 fn symbol(name: &str, mangled: &str, size: u64, section: &str) -> Symbol {
     Symbol {

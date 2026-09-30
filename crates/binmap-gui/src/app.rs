@@ -53,6 +53,8 @@ gpui_kit::actions!(
         Dismiss,
         /// Sweep build configurations.
         Sweep,
+        /// Attribute the artifact's bytes.
+        AttributeSize,
         /// Switch between the dark and light themes.
         ToggleTheme,
     ]
@@ -68,6 +70,8 @@ pub fn bind_keys(cx: &mut App) {
         gpui_kit::KeyBinding::new("ctrl-shift-t", Sweep, None),
         gpui_kit::KeyBinding::new("cmd-shift-l", ToggleTheme, None),
         gpui_kit::KeyBinding::new("ctrl-shift-l", ToggleTheme, None),
+        gpui_kit::KeyBinding::new("cmd-shift-s", AttributeSize, None),
+        gpui_kit::KeyBinding::new("ctrl-shift-s", AttributeSize, None),
         gpui_kit::KeyBinding::new("cmd-shift-e", Export, None),
         gpui_kit::KeyBinding::new("ctrl-shift-e", Export, None),
     ]);
@@ -236,6 +240,26 @@ impl Binmap {
         cx.notify();
     }
 
+    /// Attribute the selected target's bytes (`F1.2`-`F1.4`).
+    pub fn attribute_size(&mut self, cx: &mut Context<Self>) {
+        let Some(target) = self.state.selected_target().map(|t| t.id.clone()) else {
+            return;
+        };
+        let sink: Arc<dyn EventSink> = Arc::new(ChannelSink(self.sender.clone()));
+        match self.engine.start(Request::AttributeSize { target }, sink) {
+            Ok(run) => self.active = Some(run),
+            Err(error) => {
+                // A target that cannot be attributed says so rather than
+                // silently doing nothing.
+                self.state.apply(EngineEvent::Failed {
+                    run: RunId("size".into()),
+                    error: error.to_string(),
+                });
+            }
+        }
+        cx.notify();
+    }
+
     /// Cancel the run in flight, keeping everything it has measured.
     pub fn cancel(&mut self, cx: &mut Context<Self>) {
         if let Some((_, cancellation)) = &self.active {
@@ -295,6 +319,7 @@ impl Binmap {
             }
             Action::SelectTab(tab) => self.tab = tab,
             Action::StartSweep => return self.sweep(cx),
+            Action::AttributeSize => return self.attribute_size(cx),
             Action::Cancel => return self.cancel(cx),
             Action::ToggleTheme => self.theme = self.theme.toggled(),
             Action::RecheckEnvironment => return self.recheck_environment(cx),
@@ -478,6 +503,9 @@ impl Render for Binmap {
             .on_action(cx.listener(|this, _: &Sweep, _, cx| this.act(Action::StartSweep, cx)))
             .on_action(cx.listener(|this, _: &Export, _, cx| this.act(Action::ExportSession, cx)))
             .on_action(
+                cx.listener(|this, _: &AttributeSize, _, cx| this.act(Action::AttributeSize, cx)),
+            )
+            .on_action(
                 cx.listener(|this, _: &ToggleTheme, _, cx| this.act(Action::ToggleTheme, cx)),
             )
             // Escape dismisses what is open; with nothing open it cancels the
@@ -548,6 +576,12 @@ impl Render for Binmap {
                                 Some(View::Environment) => EnvironmentPanel::of(&self.state, theme)
                                     .dispatching(&dispatch)
                                     .into_any_element(),
+                                Some(View::Size) => crate::views::size::SizeExplorer::new(
+                                    self.engine.attribution(),
+                                    theme,
+                                )
+                                .dispatching(&dispatch)
+                                .into_any_element(),
                                 Some(View::Tune) => ProfileLab::new(
                                     // The most recent sweep for the selected
                                     // target. The engine derives the frontier;

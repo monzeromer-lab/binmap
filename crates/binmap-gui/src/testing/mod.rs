@@ -37,6 +37,7 @@ pub struct ScriptedEngine {
     pub restores: Mutex<Vec<String>>,
     pub exports: Mutex<Vec<String>>,
     benchmark: Option<String>,
+    attribution: Mutex<Option<binmap_core::attribution::Attribution>>,
 }
 
 impl Default for ScriptedEngine {
@@ -59,6 +60,7 @@ impl ScriptedEngine {
             restores: Mutex::new(Vec::new()),
             exports: Mutex::new(Vec::new()),
             benchmark: None,
+            attribution: Mutex::new(None),
         }
     }
 
@@ -225,8 +227,8 @@ impl Engine for ScriptedEngine {
         0
     }
 
-    fn attribution(&self) -> Option<serde_json::Value> {
-        None
+    fn attribution(&self) -> Option<binmap_core::attribution::Attribution> {
+        self.attribution.lock().expect("poisoned").clone()
     }
 
     fn sweeps(&self) -> Vec<SweepSummary> {

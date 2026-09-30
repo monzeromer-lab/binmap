@@ -6,5 +6,6 @@
 pub mod attribution;
 pub mod symbols;
 
-pub use attribution::{Attribution, Driver, Monomorphization, attribute};
+pub use attribution::attribute;
+pub use binmap_core::attribution::{Attribution, Driver, Group, Monomorphization};
 pub use symbols::{Mangling, Sizing, Symbol, SymbolTable};

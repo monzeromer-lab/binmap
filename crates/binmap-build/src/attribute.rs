@@ -8,8 +8,8 @@
 //! generic could be collapsed is a named rule applied to measurements. Neither
 //! needs a model, and `§2.4` says an analysis must not call one.
 
-use binmap_binary::attribution::{Attribution, Driver};
 use binmap_binary::symbols::SymbolTable;
+use binmap_core::attribution::{Attribution, Driver};
 use binmap_core::configuration::BuildConfiguration;
 use binmap_core::error::Result;
 use binmap_core::event::{Cancellation, EngineEvent, EventSink, RunId};

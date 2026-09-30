@@ -52,7 +52,7 @@ struct Inner {
     /// one can be written into the session artifact.
     runs: Mutex<BTreeMap<RunId, SweepState>>,
     /// The most recent size attribution, for the Size Explorer to read.
-    attribution: Mutex<Option<binmap_binary::attribution::Attribution>>,
+    attribution: Mutex<Option<binmap_core::attribution::Attribution>>,
     next_run: AtomicU64,
     /// Where sessions live.
     ///
@@ -727,13 +727,8 @@ impl Engine for BinmapEngine {
         }
     }
 
-    fn attribution(&self) -> Option<serde_json::Value> {
-        self.inner
-            .attribution
-            .lock()
-            .expect("attribution poisoned")
-            .as_ref()
-            .and_then(|attribution| serde_json::to_value(attribution).ok())
+    fn attribution(&self) -> Option<binmap_core::attribution::Attribution> {
+        self.inner.attribution.lock().expect("attribution poisoned").clone()
     }
 
     fn sweeps(&self) -> Vec<SweepSummary> {
