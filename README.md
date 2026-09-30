@@ -9,11 +9,13 @@ lto, codegen-units, panic, strip, overflow-checks — measures size, runtime and
 build time for each, verifies every one against your own tests, and derives the
 Pareto frontier over what it measured.
 
-**Status: Phase 0.** Configuration sweeps and the application shell. Size
-attribution, crash analysis, performance attribution and replay debugging are
-later phases — see [the implementation plan](docs/Binmap%20implementation%20plan.md).
-The model layer is a null backend: the tool registry and evidence store exist,
-and nothing calls a model.
+**Status: Phase 1.** Configuration sweeps, the application shell, and size
+attribution — where the bytes went, which generic they came from, and what
+category of cost they are. Crash analysis, performance attribution and replay
+debugging are later phases; see
+[the implementation plan](docs/Binmap%20implementation%20plan.md). The model
+layer is a null backend: the tool registry, the evidence store and the finding
+gate exist, and nothing calls a model.
 
 ## What it will not do
 
@@ -42,6 +44,11 @@ failed however good its size looked.
 **It will not hide a candidate that failed.** A rejected configuration stays in
 the table, greyed, with the gate that rejected it named. A near miss is
 informative.
+
+**It will not present an inferred size as a measured one.** ELF symbol sizes
+are frequently zero, so some are derived from the next symbol's address — only
+ever within one section. What fraction of an attribution rests on that is shown
+beside the numbers, not in a footnote.
 
 ## Running it
 
@@ -116,7 +123,7 @@ fixes it:
 ## Development
 
 ```bash
-cargo test --workspace      # 225 tests, no model calls
+cargo test --workspace      # 340 tests, no model calls
 cargo clippy --workspace --all-targets
 cargo deny check bans       # the architectural boundary, enforced
 ```
@@ -130,10 +137,12 @@ window is a layering violation.
 cargo run --release -p binmap-eval -- doctor corpus/tiny
 cargo run --release -p binmap-eval -- targets corpus/tiny
 cargo run --release -p binmap-eval -- sweep corpus/generics --jobs 4
+cargo run --release -p binmap-eval -- size corpus/stress
+cargo run --release -p binmap-eval -- diff before/app after/app --own myapp
 cargo run --release -p binmap-eval -- acceptance corpus/tiny
 ```
 
-`corpus/` holds six reference projects, each there to make one claim testable.
+`corpus/` holds seven reference projects, each there to make one claim testable.
 [corpus/README.md](corpus/README.md) says which.
 
 ### Layout
@@ -143,6 +152,8 @@ cargo run --release -p binmap-eval -- acceptance corpus/tiny
 | `binmap-core` | Types, the Finding and Evidence model, backend traits, the `Engine` facade |
 | `binmap-verify` | The gate harness |
 | `binmap-measure` | Size, sections, hyperfine, significance, the Pareto frontier |
+| `binmap-binary` | ELF symbol tables, demangling, attribution, diffing, DWARF |
+| `binmap-agent` | The tool registry, the finding gate |
 | `binmap-build` | Cargo integration, the sweep, the environment probe, the engine |
 | `binmap-session` | `binmap.json`, redaction, import |
 | `binmap-gui` | The GPUI application — the only product surface |

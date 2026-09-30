@@ -68,3 +68,11 @@ jobs:
 
       - name: Acceptance criterion
         run: cargo run --release -p binmap-eval -- acceptance corpus/tiny --jobs 4
+
+      # Phase 1: the gates that matter are that attribution runs at all and
+      # that a crate which cannot be attributed says so rather than failing.
+      - name: Size attribution
+        run: cargo run --release -p binmap-eval -- size corpus/stress
+
+      - name: The gates reject what breaks the suite
+        run: cargo test --release -p binmap-build --test corpus

@@ -50,8 +50,21 @@ enum Command {
     Sweep(Options),
     /// Attribute the artifact's bytes to crates, categories and generics.
     Size(Options),
+    /// Diff two built artifacts, grouping generic instantiations.
+    Diff(DiffOptions),
     /// Measure the phase's acceptance criterion and exit non-zero if it fails.
     Acceptance(Options),
+}
+
+#[derive(Args, Debug, Clone)]
+struct DiffOptions {
+    /// The build to compare against.
+    before: PathBuf,
+    /// The build to compare.
+    after: PathBuf,
+    /// Crates the user wrote, so "your code" can be told from "a dependency".
+    #[arg(long)]
+    own: Vec<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -85,6 +98,7 @@ fn main() -> ExitCode {
         Command::Targets(options) => targets(options),
         Command::Sweep(options) => sweep(options),
         Command::Size(options) => size(options),
+        Command::Diff(options) => diff(options),
         Command::Acceptance(options) => acceptance(options),
     };
 
@@ -96,6 +110,62 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Diff two builds (`F1.5`).
+///
+/// Straight through `binmap-binary` rather than the engine, because a diff
+/// takes two artifacts and no project — there is nothing for an engine to be
+/// open on.
+fn diff(options: &DiffOptions) -> Result<bool, String> {
+    let read =
+        |path: &PathBuf| binmap_binary::SymbolTable::read(path).map_err(|error| error.to_string());
+    let before = read(&options.before)?;
+    let after = read(&options.after)?;
+    let changed = binmap_binary::diff(&before, &after, &options.own);
+
+    println!(
+        "{} -> {} bytes ({:+})",
+        changed.before_bytes,
+        changed.after_bytes,
+        changed.total_delta()
+    );
+    if changed.is_empty() {
+        println!("nothing changed");
+        return Ok(true);
+    }
+    println!("{} pairs matched only by ignoring generic arguments", changed.matched_by_generic);
+
+    println!("\nby category:");
+    for (driver, delta) in changed.by_driver.iter().take(10) {
+        println!("  {:<30} {:>+12}", driver.label(), delta);
+    }
+
+    for (heading, changes) in [
+        ("grew most", &changed.grew),
+        ("shrank most", &changed.shrank),
+        ("added", &changed.added),
+        ("removed", &changed.removed),
+    ] {
+        if changes.is_empty() {
+            continue;
+        }
+        println!("\n{heading}:");
+        for change in changes.iter().take(8) {
+            let name = if change.name.len() > 54 { &change.name[..54] } else { &change.name };
+            println!(
+                "  {:<54} {:>+10}{}",
+                name,
+                change.delta,
+                if change.symbols > 1 {
+                    format!("  ({} instantiations)", change.symbols)
+                } else {
+                    String::new()
+                }
+            );
+        }
+    }
+    Ok(true)
 }
 
 /// Attribute a target's bytes (`F1.2`-`F1.4`).
