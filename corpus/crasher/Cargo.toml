@@ -1,0 +1,17 @@
+[package]
+name = "crasher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A program that dies in a known way, so crash analysis can be tested against a real core dump."
+
+[[bin]]
+name = "crasher"
+path = "src/main.rs"
+
+[profile.release]
+# Debug info is the whole point: a core from a stripped binary has nothing to
+# symbolize against, and testing against one would only prove we handle the
+# absence.
+debug = 2
+strip = "none"

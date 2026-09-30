@@ -5,6 +5,7 @@ members = [
     "crates/binmap-core",
     "crates/binmap-verify",
     "crates/binmap-agent",
+    "crates/binmap-crash",
     "crates/binmap-web",
     "crates/binmap-binary",
     "crates/binmap-build",
@@ -34,6 +35,7 @@ addr2line = "0.26"
 binmap-core = { path = "crates/binmap-core" }
 binmap-verify = { path = "crates/binmap-verify" }
 binmap-agent = { path = "crates/binmap-agent" }
+binmap-crash = { path = "crates/binmap-crash" }
 binmap-web = { path = "crates/binmap-web" }
 binmap-binary = { path = "crates/binmap-binary" }
 binmap-build = { path = "crates/binmap-build" }
@@ -51,6 +53,12 @@ tracing = "0.1"
 # `wasm` alongside `elf` because a WASM module is a Rust target, and a size
 # report that says "no sections" for one has not degraded honestly, it has
 # just stopped looking.
+# DWARF, for crash analysis. Matched to what `addr2line` resolves, so a
+# `gimli::Reader` is the same type on both sides of the boundary — the two
+# disagreeing produces type errors that read as unrelated. A second, older
+# gimli is in the lockfile via gpui's backtrace crate; that one is not in our
+# tree and nothing here links against it.
+gimli = "0.33"
 object = { version = "0.40.0", default-features = false, features = ["read", "std", "elf", "wasm"] }
 cargo_metadata = "0.23.1"
 fs4 = { version = "0.13", default-features = false, features = ["sync"] }

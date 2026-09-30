@@ -783,6 +783,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "binmap-crash"
+version = "0.1.0"
+dependencies = [
+ "addr2line 0.26.1",
+ "binmap-binary",
+ "binmap-core",
+ "gimli 0.33.0",
+ "object 0.40.0",
+ "proptest",
+ "rustc-demangle",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "binmap-eval"
 version = "0.1.0"
 dependencies = [
@@ -2621,6 +2637,9 @@ version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf7f043f89559805f8c7cacc432749b2fa0d0a0a9ee46ce47164ed5ba7f126c"
 dependencies = [
+ "fnv",
+ "hashbrown 0.16.1",
+ "indexmap",
  "stable_deref_trait",
 ]
 
