@@ -802,6 +802,7 @@ dependencies = [
 name = "binmap-eval"
 version = "0.1.0"
 dependencies = [
+ "binmap-agent",
  "binmap-binary",
  "binmap-build",
  "binmap-core",

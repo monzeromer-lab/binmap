@@ -77,6 +77,20 @@ enum Command {
     WebSweep(WebSweepOptions),
     /// Analyse a core dump against the binary that produced it (Phase 2).
     Crash(CrashOptions),
+    /// Serve the tool registry over MCP on stdio (`A2.2`).
+    ///
+    /// This is what an external agent spawns. It speaks line-delimited
+    /// JSON-RPC and never raises its own trust tier.
+    Mcp(McpOptions),
+}
+
+#[derive(Args, Debug, Clone)]
+struct McpOptions {
+    #[command(flatten)]
+    open: Options,
+    /// The tier to serve at. Never raised by the server itself.
+    #[arg(long, default_value = "observe")]
+    tier: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -181,6 +195,7 @@ fn main() -> ExitCode {
         Command::Web(options) => web(options),
         Command::WebSweep(options) => web_sweep(options),
         Command::Crash(options) => crash(options),
+        Command::Mcp(options) => mcp(options),
     };
 
     match result {
@@ -1155,5 +1170,70 @@ fn crash(options: &CrashOptions) -> Result<bool, String> {
         stack.frames.len(),
         symbolized as f64 * 100.0 / stack.frames.len().max(1) as f64
     );
+    Ok(true)
+}
+
+/// Serve the registry over MCP (`A2.2`).
+///
+/// The tools are backed by the engine's evidence store, so every result
+/// carries an identifier the airlock can later ask about. Nothing here can
+/// mint one: an agent that could invent an identifier could ground any claim
+/// it liked.
+fn mcp(options: &McpOptions) -> Result<bool, String> {
+    use binmap_agent::mcp;
+    use binmap_core::config::TrustTier;
+    use binmap_core::evidence::ToolInvocation;
+
+    let tier = match options.tier.to_lowercase().as_str() {
+        "observe" => TrustTier::Observe,
+        "propose" => TrustTier::Propose,
+        "tune" => TrustTier::Tune,
+        "autonomous" => TrustTier::Autonomous,
+        other => {
+            return Err(format!(
+                "`{other}` is not a trust tier. They are: observe, propose, tune, autonomous."
+            ));
+        }
+    };
+
+    let engine = open(&options.open)?;
+    let registry = binmap_agent::Registry::phase_one();
+
+    /// Tools backed by the engine's evidence store.
+    struct EngineTools<'a> {
+        store: &'a binmap_core::evidence::EvidenceStore,
+    }
+
+    impl mcp::Tools for EngineTools<'_> {
+        fn call(&self, call: &binmap_agent::registry::ToolCall) -> mcp::ToolOutput {
+            // Evidence before output, as everywhere else: the record is
+            // written first so nothing can cite a call that was never
+            // recorded.
+            let pending = self.store.begin(ToolInvocation::new(
+                format!("mcp:{}", call.tool),
+                [call.arguments.to_string()],
+            ));
+            let text = format!(
+                "`{}` is registered and was authorised. Phase 2 exposes its schema over MCP; \
+                 the analysis behind it is reached through orchestration.",
+                call.tool
+            );
+            let evidence = self.store.complete(pending, text.clone(), 0);
+            mcp::ToolOutput { text, evidence: Some(evidence.to_string()), failed: false }
+        }
+    }
+
+    let tools = EngineTools { store: engine.evidence_store() };
+    let mut server = mcp::Server::new(&registry, &tools, tier);
+
+    // stdout is the protocol channel, so nothing else may write to it. Every
+    // diagnostic in this subcommand goes to stderr.
+    eprintln!("binmap MCP server on stdio, tier {}", tier.label());
+    let stdin = std::io::stdin();
+    let mut input = stdin.lock();
+    let stdout = std::io::stdout();
+    let mut output = stdout.lock();
+
+    mcp::serve(&mut server, &mut input, &mut output).map_err(|error| error.to_string())?;
     Ok(true)
 }

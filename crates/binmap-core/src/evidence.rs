@@ -44,6 +44,32 @@ impl std::fmt::Display for EvidenceId {
     }
 }
 
+/// A tag unique to one store.
+///
+/// Not cryptographic and does not need to be: it distinguishes this process's
+/// stores from one another and from previous runs, which is what the airlock
+/// needs. Forging one is not the attack the airlock defends against — the
+/// digest check in `adopt` is — and a collision would only mean an identifier
+/// from an unrelated session failed to be recognised as foreign.
+fn new_session_tag() -> String {
+    use std::hash::{Hash, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// So two stores made in the same nanosecond still differ.
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0)
+        .hash(&mut hasher);
+    SEQUENCE.fetch_add(1, Ordering::Relaxed).hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+
+    format!("{:08x}", hasher.finish() as u32)
+}
+
 /// What was run, and with what. Recorded before the run, so a tool that hangs
 /// or crashes still leaves a trace of what was attempted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,6 +208,15 @@ pub struct EvidenceStore {
 #[derive(Debug, Default)]
 struct Inner {
     next: u64,
+    /// Distinguishes this store's identifiers from every other store's.
+    ///
+    /// Without it every store issued `ev-000001`, so an identifier from *any
+    /// previous session* validated against a fresh store's unrelated first
+    /// record — and the airlock's whole guarantee is that a cited identifier
+    /// was issued *here*. A restored session artifact or a replayed agent
+    /// transcript would have grounded a claim in a measurement that had
+    /// nothing to do with it.
+    session: String,
     /// Ordered so the Evidence tab and the exported artifact list invocations
     /// in the order they happened.
     records: BTreeMap<EvidenceId, Evidence>,
@@ -190,7 +225,14 @@ struct Inner {
 
 impl EvidenceStore {
     pub fn new() -> Self {
-        Self::default()
+        let store = Self::default();
+        store.inner.write().expect("a fresh store").session = new_session_tag();
+        store
+    }
+
+    /// The tag distinguishing this store's identifiers from another store's.
+    pub fn session_tag(&self) -> String {
+        self.inner.read().expect("evidence store poisoned").session.clone()
     }
 
     /// Record an invocation and mint its identifier. Call this *before* the
@@ -198,7 +240,7 @@ impl EvidenceStore {
     pub fn begin(&self, invocation: ToolInvocation) -> PendingEvidence {
         let mut inner = self.inner.write().expect("evidence store poisoned");
         inner.next += 1;
-        let id = EvidenceId(format!("ev-{:06}", inner.next));
+        let id = EvidenceId(format!("ev-{}-{:06}", inner.session, inner.next));
         inner.pending.insert(id.clone(), invocation.clone());
         PendingEvidence { id, invocation }
     }
@@ -276,8 +318,14 @@ impl EvidenceStore {
                 refused.push(record.id.clone());
                 continue;
             }
-            if let Some(serial) =
-                record.id.0.strip_prefix("ev-").and_then(|n| n.parse::<u64>().ok())
+            // Only our own serials advance our counter. An adopted record from
+            // another session carries that session's tag, so it cannot collide
+            // with anything we will issue and there is nothing to skip past.
+            if let Some(serial) = record
+                .id
+                .0
+                .strip_prefix(&format!("ev-{}-", inner.session))
+                .and_then(|serial| serial.parse::<u64>().ok())
             {
                 inner.next = inner.next.max(serial);
             }

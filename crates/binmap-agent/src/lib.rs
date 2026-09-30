@@ -16,6 +16,7 @@
 pub mod anthropic;
 pub mod backend;
 pub mod gate;
+pub mod mcp;
 pub mod native;
 pub mod openai;
 pub mod provider;

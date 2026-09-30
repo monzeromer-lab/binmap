@@ -56,15 +56,21 @@ wrappers = ["binmap-eval"]
 # no wrappers forbids a crate from the graph entirely, so this could not be
 # written while nothing called it; orchestration now does, and the ban is real.
 #
-# binmap-build only, and never binmap-gui. §2.4 runs the dependency the opposite
-# way to everyone's instinct: the model may not lead an analysis, so an analysis
-# crate may not reach the model layer, and the interface may not lead anything
-# at all. The Agent panel renders a transcript whose *shape* lives in
+# Orchestration only, and never binmap-gui. §2.4 runs the dependency the
+# opposite way to everyone's instinct: the model may not lead an analysis, so an
+# analysis crate may not reach the model layer, and the interface may not lead
+# anything at all. The Agent panel renders a transcript whose *shape* lives in
 # binmap-core exactly so that rendering one costs no dependency on the crate
 # that ran it.
+#
+# binmap-eval is on this list because it is the headless application, not the
+# interface: `A1.3` makes it the thing that drives the loop, and `A2.2`'s MCP
+# server is a process an external agent spawns rather than a view anyone
+# renders. A feature only the GUI could reach would be a feature nobody could
+# test, which is the opposite of what this boundary is protecting.
 [[bans.deny]]
 name = "binmap-agent"
-wrappers = ["binmap-build"]
+wrappers = ["binmap-build", "binmap-eval"]
 
 [[bans.deny]]
 name = "binmap-build"

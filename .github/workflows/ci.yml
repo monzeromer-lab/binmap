@@ -95,6 +95,21 @@ jobs:
       - name: The provider table is listable
         run: cargo run --release -p binmap-eval -- reasoners corpus/stress
 
+      # Phase 2's exit criterion: an external agent reaches the registry over
+      # MCP, and a claim citing evidence this session never issued is refused.
+      - name: The MCP server serves the registry
+        run: |
+          printf '%s\n%s\n%s\n' \
+            '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+            '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":2}' \
+          | cargo run --release -p binmap-eval -- mcp corpus/stress 2>/dev/null > /tmp/mcp.out
+          grep -q '"protocolVersion"' /tmp/mcp.out || { echo "::error::no handshake"; exit 1; }
+          grep -q '"inputSchema"' /tmp/mcp.out || { echo "::error::no tools"; exit 1; }
+
+      - name: The airlock holds
+        run: cargo test --release -p binmap-agent --test airlock --test mcp
+
   crash:
     name: Phase 2 — crash analysis
     runs-on: ubuntu-latest
