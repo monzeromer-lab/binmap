@@ -12,6 +12,7 @@
 //! windows an order of magnitude apart. Encoding them here is how the loop
 //! avoids discovering them from a user.
 
+use binmap_core::reasoner::{Mode, Reasoner, ReasonerChoice, Unavailable};
 use serde::{Deserialize, Serialize};
 
 /// Which wire format a provider speaks.
@@ -335,4 +336,53 @@ pub fn key_present(spec: &ProviderSpec) -> bool {
         return true;
     }
     std::env::var(spec.key_env).map(|key| !key.trim().is_empty()).unwrap_or(false)
+}
+
+/// The table, as the picker reads it (`U1.3`).
+///
+/// This is the one place the provider table becomes interface vocabulary. The
+/// interface cannot see `ProviderSpec` — `§2.4` forbids it depending on this
+/// crate at all — so it receives `binmap_core::reasoner::Reasoner`, and every
+/// base URL, key variable and quirk stays here where it belongs.
+///
+/// `allow_cloud` comes from the project, and a forbidden row is returned
+/// carrying its reason rather than omitted (`§6.3`).
+pub fn reasoners(allow_cloud: bool) -> Vec<Reasoner> {
+    let mut offered = Vec::new();
+
+    for spec in PROVIDERS {
+        for model in spec.models {
+            // The first reason that applies is the one shown. Cloud-forbidden
+            // outranks a missing key: telling someone to set a key for a
+            // provider the project will not permit is advice that cannot help.
+            let unavailable = if spec.cloud && !allow_cloud {
+                Some(Unavailable::CloudForbidden)
+            } else if spec.shape == ApiShape::Anthropic {
+                Some(Unavailable::NotImplemented { arrives_in: "Phase 1.5".into() })
+            } else if !key_present(spec) {
+                Some(Unavailable::NoCredential { variable: spec.key_env.to_string() })
+            } else {
+                None
+            };
+
+            offered.push(Reasoner {
+                id: format!("{}/{}", spec.id, model.id),
+                display: format!("{} · {}", spec.display, model.display),
+                mode: Mode::Native,
+                cloud: spec.cloud,
+                unavailable,
+                cost_per_mtok: model.capabilities.cost_per_mtok,
+            });
+        }
+    }
+
+    // `§9.1`: "None" is a first-class choice listed alongside the others rather
+    // than hidden in settings.
+    offered.push(Reasoner::none());
+    offered
+}
+
+/// The picker's initial state.
+pub fn choice(allow_cloud: bool) -> ReasonerChoice {
+    ReasonerChoice { available: reasoners(allow_cloud), selected: Reasoner::none().id }
 }

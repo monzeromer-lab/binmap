@@ -124,6 +124,10 @@ impl Binmap {
         if let Ok(targets) = engine.targets() {
             state.set_targets(targets);
         }
+        // `U1.3`: who could think about this. Asked of the engine rather than
+        // read from a table here, because §2.4 forbids this crate depending on
+        // the crate that holds one.
+        state.set_reasoners(engine.reasoners());
         state.select_view(View::Target);
 
         // Whatever the last session on this target measured. A tool that
@@ -259,6 +263,37 @@ impl Binmap {
                 // silently doing nothing.
                 self.state.apply(EngineEvent::Failed {
                     run: RunId("size".into()),
+                    error: error.to_string(),
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    /// Ask the selected reasoner about the selected target (`U1.3`).
+    ///
+    /// The question is fixed for now, and deliberately so: `§9.1`'s picker
+    /// chooses *who* thinks, and the analysis chooses what is asked. A free-text
+    /// box would make the user responsible for prompt quality, which is our job
+    /// and not theirs.
+    pub fn start_reasoning(&mut self, cx: &mut Context<Self>) {
+        let Some(target) = self.state.selected_target().map(|t| t.id.clone()) else {
+            return;
+        };
+        let reasoner = self.state.reasoner().selected.clone();
+        let question = format!(
+            "Where did the bytes in {target} go, and which of them could be removed without \
+             changing what it does?"
+        );
+
+        let sink: Arc<dyn EventSink> = Arc::new(ChannelSink(self.sender.clone()));
+        match self.engine.start(Request::Reason { target, question, reasoner }, sink) {
+            Ok(run) => self.active = Some(run),
+            Err(error) => {
+                // A reasoner that cannot be reached says so in the transcript
+                // rather than leaving an empty panel.
+                self.state.apply(EngineEvent::Failed {
+                    run: RunId("reason".into()),
                     error: error.to_string(),
                 });
             }
@@ -423,6 +458,13 @@ impl Binmap {
                 self.engine.set_trust_tier(tier);
                 self.tier_dialog = false;
             }
+            Action::SelectReasoner(id) => {
+                // The refusal is kept on the state rather than dropped, so the
+                // panel can say why the row did not take rather than appearing
+                // to ignore the click.
+                self.state.select_reasoner(&id);
+            }
+            Action::StartReasoning => return self.start_reasoning(cx),
             Action::CloseDialogs => {
                 self.tier_dialog = false;
                 self.apply_dialog = None;
@@ -582,6 +624,11 @@ impl Render for Binmap {
                                 Some(View::Environment) => EnvironmentPanel::of(&self.state, theme)
                                     .dispatching(&dispatch)
                                     .into_any_element(),
+                                Some(View::Agent) => {
+                                    crate::views::agent::AgentPanel::of(&self.state, theme)
+                                        .dispatching(&dispatch)
+                                        .into_any_element()
+                                }
                                 Some(View::Size) => crate::views::size::SizeExplorer::new(
                                     self.engine.attribution(),
                                     theme,

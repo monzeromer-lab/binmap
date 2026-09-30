@@ -26,7 +26,9 @@ impl std::fmt::Display for RunId {
 ///
 /// The interface never asks the engine a question and waits for the answer; it
 /// applies these as they arrive.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Not `Eq`: a tool call's arguments are a `serde_json::Value`, which holds
+// floats. `PartialEq` is what comparisons here actually need.
+#[derive(Debug, Clone, PartialEq)]
 pub enum EngineEvent {
     /// Work has started. `total` is the number of steps where that is known
     /// up front — for a sweep it is the matrix cardinality.
@@ -47,6 +49,15 @@ pub enum EngineEvent {
     /// be resumed (`F0.8`).
     Cancelled { run: RunId, completed: usize },
 
+    /// One entry in a reasoning transcript (`U1.3`).
+    ///
+    /// Carried on the same stream as everything else so the Agent panel is
+    /// updated by the mechanism that already updates every other view, rather
+    /// than by a second channel with its own ordering. The transcript's own
+    /// terminal event is not this enum's: a session that ends still ends the
+    /// *run* with `Finished`, and the interface stops showing progress on that.
+    Transcript { run: RunId, event: Box<crate::transcript::TranscriptEvent> },
+
     /// Work failed. The message names the thing that failed.
     Failed { run: RunId, error: String },
 }
@@ -59,6 +70,7 @@ impl EngineEvent {
             | EngineEvent::Finding { run, .. }
             | EngineEvent::Finished { run, .. }
             | EngineEvent::Cancelled { run, .. }
+            | EngineEvent::Transcript { run, .. }
             | EngineEvent::Failed { run, .. } => run,
         }
     }

@@ -300,6 +300,20 @@ pub struct ProjectConfig {
     pub parallelism: usize,
     #[serde(default)]
     pub trust_tier: TrustTier,
+    /// Whether this project's code may be sent to a cloud model
+    /// (`DESIGN-AI §6.3`).
+    ///
+    /// True by default, because the design frames this as something a project
+    /// opts *out* of. When false the cloud providers are not merely hidden but
+    /// unselectable with the reason shown — a picker that silently dropped them
+    /// could not explain the absence, and the user would conclude the
+    /// application was broken.
+    #[serde(default = "allow_cloud_models_default")]
+    pub allow_cloud_models: bool,
+}
+
+fn allow_cloud_models_default() -> bool {
+    true
 }
 
 impl ProjectConfig {
@@ -325,6 +339,7 @@ impl ProjectConfig {
             target_directory,
             parallelism: default_parallelism(),
             trust_tier: TrustTier::default(),
+            allow_cloud_models: allow_cloud_models_default(),
         }
     }
 }

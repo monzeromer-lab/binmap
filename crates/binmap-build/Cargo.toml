@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 binmap-core = { workspace = true }
+binmap-agent = { workspace = true }
 binmap-binary = { workspace = true }
 binmap-measure = { workspace = true }
 binmap-session = { workspace = true }

@@ -19,14 +19,15 @@ pub mod native;
 pub mod openai;
 pub mod provider;
 pub mod registry;
-pub mod transcript;
 
 pub use backend::{
     CompletionRequest, CompletionResponse, Message, ModelBackend, NullBackend, Role, Usage,
 };
+/// Re-exported from `binmap-core`, where the shape has to live so the
+/// interface can render it without depending on this crate (`§2.4`).
+pub use binmap_core::transcript::{self, Origin, StopReason, Transcript, TranscriptEvent};
 pub use gate::{Claim, Gate, Rejection};
 pub use native::{AgentConfig, Session, SessionOutcome, Spend};
-pub use openai::{HttpTransport, OpenAiCompatibleBackend, UnavailableTransport};
+pub use openai::{HttpTransport, OpenAiCompatibleBackend, UnavailableTransport, UreqTransport};
 pub use provider::{ApiShape, Capabilities, PROVIDERS, ProviderSpec, Quirks};
 pub use registry::{Registry, Tool, ToolCall, ToolOutcome};
-pub use transcript::{Origin, StopReason, Transcript, TranscriptEvent};

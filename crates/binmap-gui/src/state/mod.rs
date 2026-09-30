@@ -8,7 +8,9 @@ use binmap_core::capability::{Capabilities, Capability};
 use binmap_core::event::{EngineEvent, RunId};
 use binmap_core::facade::{Probe, ProbeStatus};
 use binmap_core::finding::{Finding, FindingKind};
+use binmap_core::reasoner::{Reasoner, ReasonerChoice};
 use binmap_core::traits::{Target, TargetFamily};
+use binmap_core::transcript::{SessionCost, Transcript, TranscriptEvent};
 use std::collections::BTreeMap;
 
 /// The views the nav rail can offer.
@@ -133,6 +135,16 @@ pub struct AppState {
     selected_finding: Option<String>,
     runs: BTreeMap<RunId, RunProgress>,
     probes: Vec<Probe>,
+    /// `U1.3`: who is going to think about this, and what they did.
+    ///
+    /// Defaults to "None", because every analysis in this phase works without
+    /// a model and a default that reached for one would say otherwise.
+    reasoner: ReasonerChoice,
+    transcript: Transcript,
+    cost: SessionCost,
+    /// Set when the user picked something that cannot be used, so the panel can
+    /// show why instead of silently ignoring the click.
+    reasoner_refusal: Option<String>,
 }
 
 impl AppState {
@@ -263,6 +275,74 @@ impl AppState {
         self.probes = probes;
     }
 
+    // -- the reasoner (`U1.3`) --------------------------------------------
+
+    pub fn reasoner(&self) -> &ReasonerChoice {
+        &self.reasoner
+    }
+
+    /// Offer a set of reasoners, keeping the selection if it survives.
+    ///
+    /// A selection that is no longer available falls back to "None" rather
+    /// than staying pointed at something unusable: the panel would otherwise
+    /// show a chosen row that cannot be run.
+    pub fn set_reasoners(&mut self, available: Vec<Reasoner>) {
+        let kept = available
+            .iter()
+            .any(|reasoner| reasoner.id == self.reasoner.selected && reasoner.is_selectable());
+        self.reasoner.available = available;
+        if !kept {
+            self.reasoner.selected = Reasoner::none().id;
+        }
+    }
+
+    /// Choose one, or keep why it could not be chosen.
+    pub fn select_reasoner(&mut self, id: &str) -> bool {
+        match self.reasoner.select(id) {
+            Ok(()) => {
+                self.reasoner_refusal = None;
+                true
+            }
+            Err(reason) => {
+                self.reasoner_refusal = Some(reason);
+                false
+            }
+        }
+    }
+
+    /// Why the last choice was refused, if it was.
+    pub fn reasoner_refusal(&self) -> Option<&str> {
+        self.reasoner_refusal.as_deref()
+    }
+
+    pub fn transcript(&self) -> &Transcript {
+        &self.transcript
+    }
+
+    pub fn push_transcript(&mut self, event: TranscriptEvent) {
+        self.transcript.push(event);
+    }
+
+    pub fn set_transcript(&mut self, transcript: Transcript) {
+        self.transcript = transcript;
+    }
+
+    pub fn session_cost(&self) -> SessionCost {
+        self.cost
+    }
+
+    pub fn set_session_cost(&mut self, cost: SessionCost) {
+        self.cost = cost;
+    }
+
+    /// Whether a reasoning session can be started.
+    ///
+    /// Both halves matter: "None" is a legitimate choice that simply has
+    /// nothing to ask, and a target is what a question would be about.
+    pub fn can_reason(&self) -> bool {
+        self.reasoner.uses_a_model() && self.selected_target().is_some()
+    }
+
     pub fn probes(&self) -> &[Probe] {
         &self.probes
     }
@@ -316,6 +396,29 @@ impl AppState {
                     progress.completed = progress.completed.max(completed);
                     progress.message = message;
                 }
+            }
+            EngineEvent::Transcript { event, .. } => {
+                // A new session's first event replaces the last one's
+                // transcript. Appending would run two sessions together into
+                // one unreadable list, and the panel shows the current session.
+                if matches!(*event, TranscriptEvent::Started { .. }) {
+                    self.transcript = Transcript::new();
+                    self.cost = SessionCost::default();
+                }
+                // The step count and the elapsed time come from the transcript
+                // itself rather than being tracked here, so the meter cannot
+                // drift from the events it is describing.
+                match &*event {
+                    TranscriptEvent::Hypothesis { step, .. } => {
+                        self.cost.steps = self.cost.steps.max(*step);
+                    }
+                    TranscriptEvent::Finished { steps, elapsed, .. } => {
+                        self.cost.steps = self.cost.steps.max(*steps);
+                        self.cost.elapsed = *elapsed;
+                    }
+                    _ => {}
+                }
+                self.transcript.push(*event);
             }
             EngineEvent::Finding { finding, .. } => {
                 let finding = *finding;
@@ -437,6 +540,12 @@ pub enum Action {
     OpenTierDialog,
     /// Confirm the tier the dialog is offering.
     SetTier(binmap_core::config::TrustTier),
+    /// `U1.3`: choose a reasoner. Refused, with the reason kept, when the row
+    /// cannot be used — the reason is already known, and finding out at the
+    /// first model call would report a setup problem as a session failure.
+    SelectReasoner(String),
+    /// Ask the selected reasoner a question about the current target.
+    StartReasoning,
     CloseDialogs,
 }
 

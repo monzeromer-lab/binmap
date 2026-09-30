@@ -280,3 +280,98 @@ fn decode_arguments(raw: Option<&Value>) -> Result<Value> {
         ))),
     }
 }
+
+/// A real HTTP client (`A1.1`).
+///
+/// Blocking, matching `ModelBackend`. The timeout is not optional: a local
+/// runner that has loaded a model but not finished warming it will accept a
+/// connection and then say nothing, and a loop with no timeout waits for it
+/// forever while the interface shows "Working…".
+#[derive(Debug, Clone)]
+pub struct UreqTransport {
+    timeout: std::time::Duration,
+}
+
+impl Default for UreqTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UreqTransport {
+    pub fn new() -> Self {
+        // Generous, because a local model on CPU is genuinely slow, and a
+        // timeout that fires on a working setup is worse than a slow one.
+        Self { timeout: std::time::Duration::from_secs(180) }
+    }
+
+    pub fn with_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+}
+
+impl HttpTransport for UreqTransport {
+    fn post_json(&self, url: &str, key: Option<&str>, body: &Value) -> Result<String> {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(self.timeout))
+            // A non-2xx is not an error to be thrown away: its body is
+            // where the provider says what was wrong — "model not found",
+            // "invalid api key" — and that sentence is the one the user
+            // needs. Letting ureq turn the status into an error discarded
+            // it in favour of the number.
+            .http_status_as_error(false)
+            .build()
+            .into();
+
+        let mut request = agent.post(url).header("content-type", "application/json");
+        if let Some(key) = key {
+            request = request.header("authorization", &format!("Bearer {key}"));
+        }
+
+        // Serialised here rather than through ureq's `json` feature: we
+        // already depend on serde_json, and the body is the thing the tests
+        // assert on, so it is better to own it.
+        let encoded = serde_json::to_string(body)
+            .map_err(|error| Error::Other(format!("could not encode the request: {error}")))?;
+
+        match request.send(&encoded) {
+            Ok(mut response) => {
+                let status = response.status();
+                let body = response.body_mut().read_to_string().map_err(|error| {
+                    Error::Other(format!("could not read the response from {url}: {error}"))
+                })?;
+
+                if status.is_success() {
+                    return Ok(body);
+                }
+
+                // Prefer what the provider said over what the status was. A 404
+                // from a local runner means the model was never pulled, and its
+                // body says so by name — which "HTTP 404" does not.
+                let explanation = serde_json::from_str::<Value>(&body)
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .pointer("/error/message")
+                            .or_else(|| value.pointer("/error"))
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    })
+                    .filter(|message| !message.trim().is_empty());
+
+                Err(Error::Other(match explanation {
+                    Some(message) => format!("{url} returned HTTP {status}: {message}"),
+                    None => format!(
+                        "{url} returned HTTP {status}. If this is a local runner, check that the \
+                         model is pulled and the port is right."
+                    ),
+                }))
+            }
+            Err(error) => Err(Error::Other(format!(
+                "could not reach {url}: {error}. A local runner has to be running before it can \
+                 be asked anything."
+            ))),
+        }
+    }
+}

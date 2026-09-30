@@ -5,6 +5,7 @@
 //! only thing they can reach is `binmap_core::facade::Engine`, and this crate
 //! does not depend on anything that has one (§2.4).
 
+pub mod agent;
 pub mod chrome;
 pub mod environment;
 pub mod flow;

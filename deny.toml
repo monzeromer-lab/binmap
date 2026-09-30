@@ -40,17 +40,19 @@ wildcards = "allow"
 name = "binmap-binary"
 wrappers = ["binmap-build", "binmap-eval"]
 
-# binmap-agent is not banned *yet*, and that is deliberate rather than an
-# oversight. Nothing depends on it, and a `deny` entry with no wrappers forbids
-# the crate from being in the graph at all — which fails on its own workspace
-# member. The moment orchestration starts calling it, this becomes:
+# And now binmap-agent, which was waiting for a dependent. A `deny` entry with
+# no wrappers forbids a crate from the graph entirely, so this could not be
+# written while nothing called it; orchestration now does, and the ban is real.
 #
-#     [[bans.deny]]
-#     name = "binmap-agent"
-#     wrappers = ["binmap-build"]
-#
-# and never binmap-gui, because "the model may not lead an analysis" (§2.4)
-# and the interface may not lead anything.
+# binmap-build only, and never binmap-gui. §2.4 runs the dependency the opposite
+# way to everyone's instinct: the model may not lead an analysis, so an analysis
+# crate may not reach the model layer, and the interface may not lead anything
+# at all. The Agent panel renders a transcript whose *shape* lives in
+# binmap-core exactly so that rendering one costs no dependency on the crate
+# that ran it.
+[[bans.deny]]
+name = "binmap-agent"
+wrappers = ["binmap-build"]
 
 [[bans.deny]]
 name = "binmap-build"

@@ -52,6 +52,11 @@ tracing = "0.1"
 object = { version = "0.40.0", default-features = false, features = ["read", "std", "elf", "wasm"] }
 cargo_metadata = "0.23.1"
 fs4 = { version = "0.13", default-features = false, features = ["sync"] }
+# A blocking HTTP client, matching the blocking `ModelBackend`. Chosen over
+# reqwest because reqwest would pull an async runtime into the engine for a
+# request the loop makes one at a time and waits for anyway. TLS is rustls
+# rather than the platform store so the build does not depend on OpenSSL.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 toml_edit = "0.25.13"
 similar = "3.2.0"
 statrs = "0.19.1"

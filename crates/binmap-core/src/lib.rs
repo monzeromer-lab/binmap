@@ -23,8 +23,10 @@ pub mod facade;
 pub mod finding;
 pub mod gate;
 pub mod location;
+pub mod reasoner;
 pub mod tool;
 pub mod traits;
+pub mod transcript;
 
 pub use error::{Error, Result};
 pub use evidence::{Evidence, EvidenceId, EvidenceStore, ToolInvocation};

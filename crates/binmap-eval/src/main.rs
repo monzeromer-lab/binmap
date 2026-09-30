@@ -55,6 +55,28 @@ enum Command {
     Diff(DiffOptions),
     /// Measure the phase's acceptance criterion and exit non-zero if it fails.
     Acceptance(Options),
+    /// Drive one reasoning session headlessly and print its transcript
+    /// (`A1.3`).
+    ///
+    /// The point is that the loop is reachable without the GUI: a control that
+    /// only the interface can exercise is a control nobody can test.
+    Reason(ReasonOptions),
+    /// List the reasoners this project offers, and why any are unavailable.
+    Reasoners(Options),
+}
+
+#[derive(Args, Debug, Clone)]
+struct ReasonOptions {
+    #[command(flatten)]
+    open: Options,
+    /// Which reasoner. Defaults to `none`, which calls no model — the same
+    /// default the interface has, for the same reason.
+    #[arg(long, default_value = "none")]
+    reasoner: String,
+    /// What to ask. A default is supplied so the common case needs no prompt
+    /// engineering from the caller.
+    #[arg(long)]
+    question: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -101,6 +123,8 @@ fn main() -> ExitCode {
         Command::Size(options) => size(options),
         Command::Diff(options) => diff(options),
         Command::Acceptance(options) => acceptance(options),
+        Command::Reason(options) => reason(options),
+        Command::Reasoners(options) => reasoners(options),
     };
 
     match result {
@@ -360,6 +384,11 @@ impl EventSink for Printer {
                     finding.title()
                 );
             }
+            // One line per entry, glyph first, so a transcript reads as a
+            // transcript in a terminal too.
+            EngineEvent::Transcript { event, .. } => {
+                println!("  {} {}", transcript_glyph(&event), event.headline());
+            }
             EngineEvent::Finished { summary, .. } => println!("finished: {summary}"),
             EngineEvent::Cancelled { completed, .. } => {
                 println!("cancelled after {completed} configurations; results kept");
@@ -475,6 +504,89 @@ fn acceptance(options: &Options) -> Result<bool, String> {
         println!("\nFAIL: {:.1}% < {:.1}%", reduction * 100.0, options.reduction * 100.0);
         Ok(false)
     }
+}
+
+/// The glyph for a transcript entry, matching the panel's.
+fn transcript_glyph(event: &binmap_core::transcript::TranscriptEvent) -> &'static str {
+    use binmap_core::transcript::{CallStatus, TranscriptEvent};
+    match event {
+        TranscriptEvent::Started { .. } => "▸",
+        TranscriptEvent::Hypothesis { .. } => "?",
+        TranscriptEvent::Message { .. } => "·",
+        TranscriptEvent::Thought { .. } => "◌",
+        TranscriptEvent::ToolCall { .. } => "→",
+        TranscriptEvent::ToolResult { status: CallStatus::Failed, .. } => "✕",
+        TranscriptEvent::ToolResult { .. } => "←",
+        TranscriptEvent::ClaimRejected { .. } => "✕",
+        TranscriptEvent::ClaimAccepted { .. } => "◆",
+        TranscriptEvent::Finished { .. } => "▪",
+    }
+}
+
+/// List the reasoners, and why any cannot be used (`U1.3`, headlessly).
+fn reasoners(options: &Options) -> Result<bool, String> {
+    let engine = open(options)?;
+    let offered = engine.reasoners();
+
+    println!("{} reasoners offered:", offered.len());
+    for reasoner in &offered {
+        let status = match &reasoner.unavailable {
+            Some(reason) => reason.describe(),
+            None => reasoner.price_label(),
+        };
+        println!(
+            "  {:<4} {:<34} {:<9} {}",
+            if reasoner.is_selectable() { "ok" } else { "--" },
+            reasoner.id,
+            if reasoner.cloud { "cloud" } else { "local" },
+            status
+        );
+    }
+
+    // Always true: listing what is available is not a pass/fail question, and
+    // a project with no cloud keys is not a broken project.
+    Ok(true)
+}
+
+/// Drive one reasoning session headlessly (`A1.3`).
+fn reason(options: &ReasonOptions) -> Result<bool, String> {
+    let engine = open(&options.open)?;
+    let targets = engine.targets().map_err(|error| error.to_string())?;
+    let target = match &options.open.target {
+        Some(id) => targets
+            .iter()
+            .find(|target| &target.id == id)
+            .ok_or_else(|| format!("no target `{id}`"))?,
+        None => targets.first().ok_or("this project has no targets Binmap can measure")?,
+    };
+
+    let question = options.question.clone().unwrap_or_else(|| {
+        format!(
+            "Where did the bytes in {} go, and which of them could be removed without changing \
+             what it does?",
+            target.id
+        )
+    });
+
+    let events = Arc::new(Printer::new());
+    engine
+        .start(
+            Request::Reason {
+                target: target.id.clone(),
+                question,
+                reasoner: options.reasoner.clone(),
+            },
+            events.clone(),
+        )
+        .map_err(|error| error.to_string())?;
+    events.wait();
+
+    // A session that could not run is a failure of the run, not of the harness,
+    // and the caller must be able to exit nonzero on it.
+    if let Some(failure) = events.failure() {
+        return Err(failure);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

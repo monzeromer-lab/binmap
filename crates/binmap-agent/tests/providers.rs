@@ -178,3 +178,138 @@ fn a_model_name_that_is_not_offered_is_refused_rather_than_guessed() {
     assert!(local.model("gpt-5").is_none(), "the local runner does not host GPT-5");
     assert!(local.model(local.default_model().unwrap().id).is_some());
 }
+
+// --- the table as the picker reads it (`U1.3`) ---
+
+use binmap_core::reasoner::{Mode, Unavailable};
+
+#[test]
+fn none_is_always_offered_and_always_selectable() {
+    // §9.1: a first-class choice listed beside the others. Every analysis
+    // works without a model, so the deterministic path must never be the one
+    // that is greyed out.
+    for allow_cloud in [true, false] {
+        let offered = binmap_agent::provider::reasoners(allow_cloud);
+        let none =
+            offered.iter().find(|reasoner| reasoner.mode == Mode::None).expect("None is offered");
+        assert!(none.is_selectable(), "None must always be choosable");
+        assert!(!none.cloud);
+    }
+}
+
+#[test]
+fn forbidding_cloud_greys_out_cloud_rows_but_keeps_them_listed() {
+    let offered = binmap_agent::provider::reasoners(false);
+    let cloud: Vec<_> = offered.iter().filter(|reasoner| reasoner.cloud).collect();
+    assert!(!cloud.is_empty(), "the cloud rows are still listed");
+
+    for reasoner in cloud {
+        match &reasoner.unavailable {
+            Some(Unavailable::CloudForbidden) => {}
+            other => panic!("{} should be cloud-forbidden, got {other:?}", reasoner.id),
+        }
+        // And the reason must tell the user something true and reassuring.
+        let reason = reasoner.unavailable.as_ref().unwrap().describe();
+        assert!(reason.contains("leaves the machine"), "{reason}");
+    }
+}
+
+#[test]
+fn cloud_forbidden_outranks_a_missing_key() {
+    // Telling someone to set a key for a provider the project will not permit
+    // is advice that cannot help.
+    let offered = binmap_agent::provider::reasoners(false);
+    let anthropic = offered
+        .iter()
+        .find(|reasoner| reasoner.id.starts_with("anthropic/"))
+        .expect("Claude is listed");
+    assert_eq!(anthropic.unavailable, Some(Unavailable::CloudForbidden));
+}
+
+#[test]
+fn claude_says_it_arrives_later_rather_than_failing_at_the_first_call() {
+    // Sending Anthropic an OpenAI-shaped body and reporting whatever it
+    // returns would blame the user for our missing wire shape.
+    let offered = binmap_agent::provider::reasoners(true);
+    let anthropic = offered
+        .iter()
+        .find(|reasoner| reasoner.id.starts_with("anthropic/"))
+        .expect("Claude is listed");
+
+    match &anthropic.unavailable {
+        Some(Unavailable::NotImplemented { arrives_in }) => assert_eq!(arrives_in, "Phase 1.5"),
+        other => panic!("expected a not-implemented reason, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_local_runner_is_selectable_with_no_key_at_all() {
+    // The one provider that always works, and the one §7.3 authors against.
+    let offered = binmap_agent::provider::reasoners(true);
+    let local = offered
+        .iter()
+        .find(|reasoner| reasoner.id.starts_with("local/"))
+        .expect("a local runner is listed");
+    assert!(local.is_selectable(), "{:?}", local.unavailable);
+    assert_eq!(local.price_label(), "free", "a local model is free, not $0.00");
+}
+
+#[test]
+fn selecting_an_unavailable_reasoner_is_refused_with_its_reason() {
+    // The reason is already known here. Discovering it at the first model call
+    // would report a setup problem as a session failure.
+    let mut choice = binmap_agent::provider::choice(false);
+    let cloud_id = choice
+        .available
+        .iter()
+        .find(|reasoner| reasoner.cloud)
+        .expect("a cloud row exists")
+        .id
+        .clone();
+
+    let error = choice.select(&cloud_id).expect_err("a forbidden row cannot be selected");
+    assert!(error.contains("does not allow cloud"), "{error}");
+    assert_eq!(choice.selected, "none", "and the selection did not change");
+}
+
+#[test]
+fn selecting_a_reasoner_that_does_not_exist_says_so() {
+    let mut choice = binmap_agent::provider::choice(true);
+    assert!(choice.select("nonesuch/model").is_err());
+}
+
+#[test]
+fn the_default_choice_calls_no_model() {
+    // §7's phase table has the product working with no model at all, so a
+    // default that reached for one would contradict it.
+    let choice = binmap_agent::provider::choice(true);
+    assert_eq!(choice.selected, "none");
+    assert!(!choice.uses_a_model());
+
+    let mut chosen = choice;
+    chosen.select("local/qwen3-coder").expect("the local runner is selectable");
+    assert!(chosen.uses_a_model());
+}
+
+#[test]
+fn every_offered_reasoner_describes_itself_readably() {
+    for allow_cloud in [true, false] {
+        for reasoner in binmap_agent::provider::reasoners(allow_cloud) {
+            let described = reasoner.describe();
+            assert!(!described.is_empty(), "{} describes itself as nothing", reasoner.id);
+            assert_eq!(described.lines().count(), 1, "{described:?} spans lines");
+            assert!(!reasoner.price_label().is_empty(), "{} has no price label", reasoner.id);
+        }
+    }
+}
+
+#[test]
+fn a_reasoner_id_survives_into_a_session_unchanged() {
+    // The id is what a session records, so it must be stable and unique.
+    let offered = binmap_agent::provider::reasoners(true);
+    let mut ids: Vec<&str> = offered.iter().map(|reasoner| reasoner.id.as_str()).collect();
+    ids.sort_unstable();
+    let count = ids.len();
+    ids.dedup();
+    assert_eq!(ids.len(), count, "duplicate reasoner ids would make a session ambiguous");
+}

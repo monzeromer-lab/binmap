@@ -242,3 +242,215 @@ fn selecting_something_that_is_not_there_is_refused_rather_than_stored() {
     assert!(!state.select_finding("no-such-finding"));
     assert_eq!(state.selected_target().map(|t| t.id.as_str()), Some("app::app"));
 }
+
+// --- the reasoner and the transcript (`U1.3`) -------------------------------
+
+use binmap_core::reasoner::{Mode, Reasoner, Unavailable};
+use binmap_core::transcript::{Origin, StopReason};
+
+fn a_local_reasoner() -> Reasoner {
+    Reasoner {
+        id: "local/qwen3-coder".into(),
+        display: "Local · Qwen3 Coder".into(),
+        mode: Mode::Native,
+        cloud: false,
+        unavailable: None,
+        cost_per_mtok: None,
+    }
+}
+
+fn a_forbidden_cloud_reasoner() -> Reasoner {
+    Reasoner {
+        id: "openai/gpt-5".into(),
+        display: "OpenAI · GPT-5".into(),
+        mode: Mode::Native,
+        cloud: true,
+        unavailable: Some(Unavailable::CloudForbidden),
+        cost_per_mtok: Some((1.25, 10.0)),
+    }
+}
+
+#[test]
+fn the_default_reasoner_calls_no_model() {
+    // §7's phase table has the product working with no model at all, so a
+    // default that reached for one would contradict the product.
+    let state = AppState::new();
+    assert_eq!(state.reasoner().selected, "none");
+    assert!(!state.reasoner().uses_a_model());
+    assert!(!state.can_reason(), "with no target and no model there is nothing to ask");
+}
+
+#[test]
+fn choosing_a_reasoner_and_a_target_is_what_makes_asking_possible() {
+    let mut state = AppState::new();
+    state.set_targets(vec![target("crate::bin", &[Capability::ConfigurationSweep])]);
+    state.set_reasoners(vec![a_local_reasoner(), Reasoner::none()]);
+
+    assert!(!state.can_reason(), "a target alone is not enough");
+    assert!(state.select_reasoner("local/qwen3-coder"));
+    assert!(state.can_reason());
+}
+
+#[test]
+fn choosing_an_unavailable_reasoner_keeps_the_reason_and_changes_nothing() {
+    // The reason is already known. Discovering it at the first model call would
+    // report a setup problem as a session failure.
+    let mut state = AppState::new();
+    state.set_reasoners(vec![a_forbidden_cloud_reasoner(), Reasoner::none()]);
+
+    assert!(!state.select_reasoner("openai/gpt-5"));
+    assert_eq!(state.reasoner().selected, "none", "the selection did not move");
+
+    let refusal = state.reasoner_refusal().expect("the reason is kept for the panel");
+    assert!(refusal.contains("does not allow cloud"), "{refusal}");
+}
+
+#[test]
+fn a_successful_choice_clears_an_earlier_refusal() {
+    // A stale refusal beside a working selection reads as a current problem.
+    let mut state = AppState::new();
+    state.set_reasoners(vec![a_forbidden_cloud_reasoner(), a_local_reasoner(), Reasoner::none()]);
+
+    assert!(!state.select_reasoner("openai/gpt-5"));
+    assert!(state.reasoner_refusal().is_some());
+
+    assert!(state.select_reasoner("local/qwen3-coder"));
+    assert!(state.reasoner_refusal().is_none(), "the old refusal must not linger");
+}
+
+#[test]
+fn a_selection_that_is_no_longer_offered_falls_back_to_none() {
+    // Re-probing can remove a reasoner — a key was unset, a project forbade the
+    // cloud. Staying pointed at it would leave a chosen row that cannot run.
+    let mut state = AppState::new();
+    state.set_reasoners(vec![a_local_reasoner(), Reasoner::none()]);
+    assert!(state.select_reasoner("local/qwen3-coder"));
+
+    state.set_reasoners(vec![Reasoner::none()]);
+    assert_eq!(state.reasoner().selected, "none");
+}
+
+#[test]
+fn a_selection_that_survives_a_reprobe_is_kept() {
+    let mut state = AppState::new();
+    state.set_reasoners(vec![a_local_reasoner(), Reasoner::none()]);
+    assert!(state.select_reasoner("local/qwen3-coder"));
+
+    state.set_reasoners(vec![a_local_reasoner(), a_forbidden_cloud_reasoner(), Reasoner::none()]);
+    assert_eq!(state.reasoner().selected, "local/qwen3-coder", "a working choice is not reset");
+}
+
+#[test]
+fn a_selection_that_becomes_unavailable_falls_back_even_though_it_is_still_listed() {
+    // The subtle case: the row is still there, but greyed out. Keeping it
+    // selected would show a chosen row the Ask button cannot use.
+    let mut state = AppState::new();
+    state.set_reasoners(vec![a_local_reasoner(), Reasoner::none()]);
+    assert!(state.select_reasoner("local/qwen3-coder"));
+
+    let now_unavailable = Reasoner {
+        unavailable: Some(Unavailable::NoCredential { variable: "X".into() }),
+        ..a_local_reasoner()
+    };
+    state.set_reasoners(vec![now_unavailable, Reasoner::none()]);
+    assert_eq!(state.reasoner().selected, "none");
+}
+
+#[test]
+fn transcript_events_arrive_on_the_engines_own_stream() {
+    // Not a second channel: the panel is updated by the mechanism that already
+    // updates every other view, so the ordering is the one everything else has.
+    let mut state = AppState::new();
+    let run = RunId("reason-1".into());
+
+    state.apply(EngineEvent::Transcript {
+        run: run.clone(),
+        event: Box::new(TranscriptEvent::Started {
+            reasoner: "local/qwen3-coder".into(),
+            origin: Origin::Native,
+        }),
+    });
+    state.apply(EngineEvent::Transcript {
+        run,
+        event: Box::new(TranscriptEvent::Hypothesis {
+            step: 2,
+            belief: "fmt dominates".into(),
+            refuted_by: "small fmt symbols".into(),
+        }),
+    });
+
+    assert_eq!(state.transcript().len(), 2);
+    assert_eq!(state.session_cost().steps, 2, "the meter reads the step from the transcript");
+}
+
+#[test]
+fn a_new_session_replaces_the_previous_transcript() {
+    // Appending would run two sessions together into one unreadable list.
+    let mut state = AppState::new();
+    let run = RunId("reason-1".into());
+    let started = |name: &str| EngineEvent::Transcript {
+        run: RunId("reason-1".into()),
+        event: Box::new(TranscriptEvent::Started { reasoner: name.into(), origin: Origin::Native }),
+    };
+
+    state.apply(started("first"));
+    state.apply(EngineEvent::Transcript {
+        run,
+        event: Box::new(TranscriptEvent::Message {
+            text: "thinking".into(),
+            origin: Origin::Native,
+        }),
+    });
+    assert_eq!(state.transcript().len(), 2);
+
+    state.apply(started("second"));
+    assert_eq!(state.transcript().len(), 1, "the new session starts clean");
+    assert_eq!(state.session_cost().steps, 0, "and so does the meter");
+}
+
+#[test]
+fn a_finished_session_records_why_it_stopped_and_how_long_it_took() {
+    let mut state = AppState::new();
+    state.apply(EngineEvent::Transcript {
+        run: RunId("reason-1".into()),
+        event: Box::new(TranscriptEvent::Finished {
+            reason: StopReason::BudgetExhausted { limit: "steps (25 of 25)".into() },
+            steps: 25,
+            elapsed: std::time::Duration::from_secs(42),
+        }),
+    });
+
+    match state.transcript().stop_reason() {
+        Some(StopReason::BudgetExhausted { limit }) => assert!(limit.contains("25"), "{limit}"),
+        other => panic!("expected the budget reason, got {other:?}"),
+    }
+    assert_eq!(state.session_cost().steps, 25);
+    assert_eq!(state.session_cost().elapsed.as_secs(), 42);
+}
+
+#[test]
+fn the_cost_meter_says_free_rather_than_zero_for_a_local_model() {
+    // "free" and "$0.00" mean different things: one is a local model, the other
+    // is a priced model nobody has called yet.
+    let mut cost = SessionCost { max_steps: 25, ..SessionCost::default() };
+    assert!(cost.label().contains("free"), "{}", cost.label());
+
+    cost.cost = Some(0.0);
+    assert!(cost.label().contains("$0.00"), "{}", cost.label());
+}
+
+#[test]
+fn a_cost_under_a_cent_does_not_round_to_free() {
+    // "$0.00" beside real spending reads as free when it is not.
+    let cost = SessionCost { max_steps: 25, cost: Some(0.004), ..SessionCost::default() };
+    assert!(cost.label().contains("under $0.01"), "{}", cost.label());
+}
+
+#[test]
+fn the_budget_bar_never_leaves_its_track() {
+    // A run that overshot its budget must not draw past the end of the bar.
+    for (steps, max, expected) in [(0, 25, 0.0), (25, 25, 1.0), (30, 25, 1.0), (5, 0, 0.0)] {
+        let cost = SessionCost { steps, max_steps: max, ..SessionCost::default() };
+        assert_eq!(cost.step_fraction(), expected, "{steps} of {max}");
+    }
+}

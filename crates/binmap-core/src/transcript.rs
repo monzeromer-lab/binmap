@@ -1,5 +1,13 @@
 //! What a reasoning session did, as a sequence of events (`U1.3`, `AI.9`).
 //!
+//! This lives in `binmap-core` rather than beside the loop that produces it,
+//! for the same reason `Attribution` does: `§2.4` allows the interface to
+//! depend on `binmap-core` and `binmap-session` and nothing else, so the Agent
+//! panel can only render a transcript if its *shape* is here. The loop, the
+//! providers and the backends stay in `binmap-agent`, which the interface may
+//! not reach — rendering a session costs no dependency on the crate that ran
+//! one.
+//!
 //! The enum deliberately mirrors ACP's `session/update` notifications —
 //! message chunks, thought chunks, tool calls, tool-call updates, plans —
 //! because `DESIGN-AI §9.2` asks for one transcript view that renders both
@@ -350,4 +358,54 @@ fn clamp(text: &str, limit: usize) -> String {
     }
     let kept: String = text.chars().take(limit.saturating_sub(1)).collect();
     format!("{kept}…")
+}
+
+/// What a session spent, for the meter (`§9.3`).
+///
+/// Display vocabulary only: the budget *logic* — which limit was passed, and
+/// what to do about it — stays with the loop in `binmap-agent`, because the
+/// interface does not decide when to stop. This is what the panel needs to draw
+/// a meter, and nothing more.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct SessionCost {
+    pub steps: u32,
+    pub max_steps: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    /// `None` means free, which is not zero. A local model costs nothing to
+    /// run; a priced model nobody has called yet has spent nothing. The meter
+    /// says different things for the two.
+    pub cost: Option<f64>,
+    pub elapsed: Duration,
+}
+
+impl SessionCost {
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens
+    }
+
+    /// How far through the step budget, in 0.0..=1.0, for the meter's bar.
+    pub fn step_fraction(&self) -> f32 {
+        if self.max_steps == 0 {
+            return 0.0;
+        }
+        (self.steps as f32 / self.max_steps as f32).clamp(0.0, 1.0)
+    }
+
+    /// What the meter reads.
+    pub fn label(&self) -> String {
+        let money = match self.cost {
+            // Below a cent, "$0.00" reads as free when it is not. Saying
+            // "under $0.01" is the honest version of the same number.
+            Some(spent) if spent > 0.0 && spent < 0.01 => "under $0.01".to_string(),
+            Some(spent) => format!("${spent:.2}"),
+            None => "free".to_string(),
+        };
+        format!(
+            "{} of {} steps · {} tokens · {money}",
+            self.steps,
+            self.max_steps,
+            self.total_tokens()
+        )
+    }
 }

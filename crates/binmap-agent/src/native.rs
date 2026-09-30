@@ -19,11 +19,11 @@ use crate::backend::{
 };
 use crate::gate::{Claim, Gate};
 use crate::registry::Registry;
-use crate::transcript::{CallStatus, Origin, StopReason, Transcript, TranscriptEvent};
 use binmap_core::config::TrustTier;
 use binmap_core::error::Result;
 use binmap_core::evidence::{EvidenceId, EvidenceStore, ToolInvocation};
 use binmap_core::finding::{Confidence, Finding, FindingKind, Provenance};
+use binmap_core::transcript::{CallStatus, Origin, StopReason, Transcript, TranscriptEvent};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 

@@ -307,6 +307,117 @@ impl BinmapEngine {
 }
 
 impl Inner {
+    /// Whether this project permits a cloud model (`DESIGN-AI §6.3`).
+    fn allow_cloud_models(&self) -> bool {
+        self.config.read().expect("config poisoned").allow_cloud_models
+    }
+
+    /// Drive one reasoning session, relaying its transcript as it goes
+    /// (`A1.1`, `U1.3`).
+    ///
+    /// The direction here is the one `§2.4` insists on and that is easy to get
+    /// backwards: orchestration reaches into the model layer, and the model
+    /// layer never reaches back into an analysis. The question came from the
+    /// interface; what answers it is decided here.
+    fn run_reasoning(
+        &self,
+        run: RunId,
+        target: &Target,
+        question: &str,
+        reasoner: &str,
+        events: &dyn EventSink,
+    ) {
+        use binmap_agent::backend::ModelBackend;
+
+        events.emit(EngineEvent::Started {
+            run: run.clone(),
+            description: format!("Asking {reasoner} about {}", target.name),
+            total: None,
+        });
+
+        let registry = binmap_agent::Registry::phase_one();
+        let mut gate = binmap_agent::Gate::new();
+        let config = binmap_agent::AgentConfig::default();
+
+        // Build the backend the chosen row describes. "none" is a legitimate
+        // choice rather than an error, and it is the default.
+        let backend: Box<dyn ModelBackend> = match self.backend_for(reasoner) {
+            Ok(backend) => backend,
+            Err(error) => {
+                events.emit(EngineEvent::Failed { run, error: error.to_string() });
+                return;
+            }
+        };
+
+        let mut session = binmap_agent::Session {
+            backend: backend.as_ref(),
+            registry: &registry,
+            gate: &mut gate,
+            store: self.runner.store(),
+            config,
+            tier: self.config.read().expect("config poisoned").trust_tier,
+        };
+        let outcome = session.run(question);
+
+        // Relay the transcript on the same stream as everything else, so the
+        // panel is updated by the mechanism that already updates every view.
+        for event in outcome.transcript.events() {
+            events
+                .emit(EngineEvent::Transcript { run: run.clone(), event: Box::new(event.clone()) });
+        }
+
+        // Findings are persisted before the terminal event, as everywhere else:
+        // a harness that exits on the terminal event would otherwise lose them.
+        if !outcome.findings.is_empty() {
+            let mut findings = self.findings.lock().expect("findings poisoned");
+            for finding in &outcome.findings {
+                events.emit(EngineEvent::Finding {
+                    run: run.clone(),
+                    finding: Box::new(finding.clone()),
+                });
+                findings.push(finding.clone());
+            }
+        }
+
+        // A session that failed is a failed run, and must not leave on
+        // `Finished`. The same hole in the headless harness made a refused
+        // sweep exit 0, which in CI is indistinguishable from success.
+        //
+        // Budget exhaustion is *not* a failure: the session did its job and
+        // said what it believed, which §8 is explicit is a useful answer.
+        match &outcome.stop_reason {
+            binmap_core::transcript::StopReason::Failed { error } => {
+                events.emit(EngineEvent::Failed { run, error: error.clone() })
+            }
+            _ => events.emit(EngineEvent::Finished { run, summary: outcome.summary() }),
+        }
+    }
+
+    /// The backend a reasoner id names.
+    fn backend_for(&self, reasoner: &str) -> Result<Box<dyn binmap_agent::backend::ModelBackend>> {
+        if reasoner == "none" || reasoner.is_empty() {
+            return Ok(Box::new(binmap_agent::NullBackend::new()));
+        }
+        let (provider_id, model) = reasoner.split_once('/').ok_or_else(|| {
+            Error::Other(format!(
+                "`{reasoner}` is not a reasoner id; they look like `local/qwen3-coder`"
+            ))
+        })?;
+        let spec = binmap_agent::provider::provider(provider_id)
+            .ok_or_else(|| Error::Other(format!("there is no provider `{provider_id}`")))?;
+        if spec.cloud && !self.allow_cloud_models() {
+            return Err(Error::Other(format!(
+                "{} is a cloud provider and this project does not allow cloud models",
+                spec.display
+            )));
+        }
+        binmap_agent::backend::backend_for(
+            spec,
+            model,
+            std::sync::Arc::new(binmap_agent::UreqTransport::new()),
+        )
+    }
+
     fn target_by_id(&self, id: &str) -> Result<Target> {
         self.targets
             .read()
@@ -680,6 +791,32 @@ impl Engine for BinmapEngine {
                      beside it"
                 )));
             }
+            // A reasoning session detaches like a sweep: a model call takes
+            // seconds at best, and blocking the interface on one would be felt.
+            //
+            // This is the wiring `§2.4` describes in the direction it insists
+            // on: orchestration reaches the model layer, and the model layer
+            // never reaches back. The interface asked a question; what answers
+            // it is decided here.
+            Request::Reason { target, question, reasoner } => {
+                let target = self.inner.target_by_id(&target)?;
+                let run = RunId(format!("reason-{}", target.id.replace("::", "-")));
+                let inner = Arc::clone(&self.inner);
+                let detached = run.clone();
+                std::thread::Builder::new()
+                    .name(format!("binmap-{run}"))
+                    .spawn(move || {
+                        inner.run_reasoning(
+                            detached,
+                            &target,
+                            &question,
+                            &reasoner,
+                            events.as_ref(),
+                        );
+                    })
+                    .map_err(|source| Error::Other(format!("could not start the run: {source}")))?;
+                return Ok((run, cancellation));
+            }
         };
 
         // Detached, so `start` returns as soon as the run is registered. The
@@ -757,6 +894,15 @@ impl Engine for BinmapEngine {
 
     fn set_trust_tier(&self, tier: TrustTier) {
         self.inner.config.write().expect("config poisoned").trust_tier = tier;
+    }
+
+    /// Every reasoner the table offers, as the picker reads them.
+    ///
+    /// `allow_cloud` comes from the project's own configuration, because `§6.3`
+    /// lets a project forbid sending its code off the machine and that
+    /// decision belongs to the project rather than to the picker.
+    fn reasoners(&self) -> Vec<binmap_core::reasoner::Reasoner> {
+        binmap_agent::provider::reasoners(self.inner.allow_cloud_models())
     }
 
     fn proposals(&self) -> Vec<Proposal> {

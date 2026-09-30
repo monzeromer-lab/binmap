@@ -234,6 +234,13 @@ pub enum Request {
     /// Write a verified proposal into the working tree. Requires
     /// [`TrustTier::Tune`](crate::config::TrustTier::Tune).
     Apply { proposal: String },
+    /// Ask the selected reasoner a question about a target (`A1.1`, `U1.3`).
+    ///
+    /// The engine decides whether a model is called at all: `§2.4` is that the
+    /// model may not lead an analysis, so the interface asks a question and
+    /// orchestration chooses how to answer it. A reasoner of "none" is a
+    /// legitimate answer to that choice.
+    Reason { target: String, question: String, reasoner: String },
 }
 
 /// What the interface may ask of the engine.
@@ -266,6 +273,17 @@ pub trait Engine: Send + Sync {
 
     /// The proposals currently on offer.
     fn proposals(&self) -> Vec<Proposal>;
+
+    /// Who could think about this (`U1.3`, `DESIGN-AI §9.1`).
+    ///
+    /// The interface renders these and cannot see the provider table behind
+    /// them: base URLs, keys and wire quirks are not its business, and `§2.4`
+    /// forbids it depending on the crate that holds them. An engine with no
+    /// model layer returns just the deterministic choice, which is why that is
+    /// the default rather than an error.
+    fn reasoners(&self) -> Vec<crate::reasoner::Reasoner> {
+        vec![crate::reasoner::Reasoner::none()]
+    }
 
     /// Read back what a previous session on this target measured.
     ///
