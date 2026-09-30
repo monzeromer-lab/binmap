@@ -28,8 +28,12 @@ fn main() {
         modules.unavailable.len()
     );
 
-    let stack =
-        binmap_crash::unwind::walk(&dump, &core_data, &modules, &thread.registers).expect("stack");
+    let stack = binmap_crash::unwind::walk(
+        &binmap_crash::memory::CoreMemory { dump: &dump, data: &core_data },
+        &modules,
+        &thread.registers,
+    )
+    .expect("stack");
     println!("{}\n", stack.describe());
 
     // One symbolizer per module, built from the frames that landed in it.

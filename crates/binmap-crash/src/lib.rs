@@ -16,6 +16,7 @@ pub mod bias;
 pub mod classify;
 pub mod correspondence;
 pub mod dump;
+pub mod memory;
 pub mod modules;
 pub mod registers;
 pub mod report;

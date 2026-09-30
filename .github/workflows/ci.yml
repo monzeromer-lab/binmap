@@ -150,6 +150,27 @@ jobs:
       - name: Phase 2 acceptance criterion
         run: cargo run --release -p binmap-eval -- acceptance2
 
+  perf:
+    name: Phase 3 — performance attribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The sampler profiles a process it spawned itself, using ptrace under
+      # yama's descendant rule — so it needs no elevated permissions and no
+      # `perf_event_paranoid` change, which is exactly why it exists.
+      - name: Build the benchmark corpus
+        working-directory: corpus/hotloop
+        run: cargo build --release
+
+      - name: Phase 3 acceptance criterion
+        run: cargo run --release -p binmap-eval -- acceptance3 --seconds 4
+
+      - name: Performance attribution tests
+        run: cargo test --release -p binmap-perf
+
   web:
     name: Phase 1.5 — the web backend
     runs-on: ubuntu-latest

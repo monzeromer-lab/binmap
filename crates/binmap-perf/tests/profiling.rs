@@ -304,6 +304,65 @@ fn a_function_present_in_only_one_profile_still_appears() {
         &attribute(&after, fake_resolve),
     );
 
-    assert!(changes.iter().any(|c| c.function == "core::ptr::inner" && c.after == 0));
+    // By *owner*: `core::ptr::inner` is inlined into `app::hot`, and a
+    // comparison names the function someone can edit.
+    assert!(changes.iter().any(|c| c.function == "app::hot" && c.after == 0), "{changes:?}");
     assert!(changes.iter().any(|c| c.function == "app::cold" && c.before == 0));
+    assert!(
+        !changes.iter().any(|c| c.function == "core::ptr::inner"),
+        "an inlined stdlib function is never the answer to \"what regressed\": {changes:?}"
+    );
+}
+
+// --- where the time is, versus which function to change ---------------------
+
+#[test]
+fn self_time_names_the_inlined_function_and_ownership_names_the_editable_one() {
+    // Two different questions with two different right answers. "Where is the
+    // time" is `core::ptr::inner`; "which function do I change" is `app::hot`,
+    // because nobody can edit the first.
+    let profile = a_profile(&[(&[0x10, 0x30], 100)]);
+    let attributed = attribute(&profile, fake_resolve);
+
+    let hottest = &attributed.hot[0];
+    assert_eq!(hottest.function, "core::ptr::inner", "where the time is");
+    assert_eq!(hottest.owner, "app::hot", "and whose fault that is");
+
+    let owners = attributed.by_owner();
+    assert_eq!(owners[0].0, "app::hot");
+    assert_eq!(owners[0].1, 100, "the inlined samples rolled up");
+    assert!(
+        !owners.iter().any(|(name, _)| name == "core::ptr::inner"),
+        "an inlined frame is not its own owner: {owners:?}"
+    );
+}
+
+#[test]
+fn a_regression_inside_an_inlined_call_is_attributed_to_the_caller() {
+    // The failure this fixes, found while measuring Phase 3's criterion: a
+    // real injected regression in a function whose work is all inlined stdlib
+    // calls was invisible in the ranking, because every sample of it was
+    // attributed to the stdlib function.
+    let before = a_profile(&[(&[0x10, 0x30], 2_000), (&[0x40, 0x30], 2_000)]);
+    let after = a_profile(&[(&[0x10, 0x30], 3_600), (&[0x40, 0x30], 400)]);
+
+    let changes = compare(
+        &before,
+        &after,
+        &attribute(&before, fake_resolve),
+        &attribute(&after, fake_resolve),
+    );
+
+    let worst = changes.first().expect("a regression");
+    assert_eq!(worst.function, "app::hot", "the function someone can edit");
+    assert!(worst.is_significant());
+    assert!(worst.delta() > 0);
+}
+
+#[test]
+fn a_function_with_no_inlining_owns_itself() {
+    let profile = a_profile(&[(&[0x40, 0x30], 100)]);
+    let attributed = attribute(&profile, fake_resolve);
+    let cold = attributed.hot.iter().find(|h| h.function == "app::cold").expect("cold");
+    assert_eq!(cold.owner, "app::cold");
 }

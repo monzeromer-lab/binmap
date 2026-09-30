@@ -69,7 +69,12 @@ fn analyse(core_data: &[u8], binary: &[u8], binary_path: &Path) -> Analysed {
 
     let name = binary_path.file_name().unwrap().to_string_lossy().to_string();
     let modules = Modules::load(&dump, Some((&name, binary)));
-    let stack = unwind::walk(&dump, core_data, &modules, &thread.registers).expect("a stack");
+    let stack = unwind::walk(
+        &binmap_crash::memory::CoreMemory { dump: &dump, data: core_data },
+        &modules,
+        &thread.registers,
+    )
+    .expect("a stack");
 
     let frames: Vec<Resolved> = stack
         .frames

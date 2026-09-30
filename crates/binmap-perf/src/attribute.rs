@@ -34,6 +34,19 @@ pub struct Hot {
     /// `F3.3`: visually distinct, because an inlined function has no call
     /// overhead and "make this not a function call" is advice that cannot help.
     pub inlined: bool,
+    /// The function that physically owns this code.
+    ///
+    /// For an inlined frame this is the function it was inlined *into*, which
+    /// is a different question from where the time is and the one a reader
+    /// usually wants. Time spent in `<u64>::rotate_left` inlined into
+    /// `hotloop::transform` is time you change by editing `transform`; you
+    /// cannot edit `rotate_left`.
+    ///
+    /// This is not cosmetic. Measuring Phase 3's criterion, an injected
+    /// regression in `transform` was invisible in the ranking for exactly this
+    /// reason — every one of its samples was attributed to the stdlib function
+    /// it had inlined, which no reader would recognise as the culprit.
+    pub owner: String,
 }
 
 impl Hot {
@@ -86,6 +99,23 @@ impl Attributed {
     }
 
     /// The functions that are the reader's own.
+    /// Self samples rolled up to the function that physically owns them.
+    ///
+    /// The ranking to use when asking "which function regressed", as distinct
+    /// from "where is the time". An inlined stdlib function is never the
+    /// answer to the first question, because it is not a function anyone can
+    /// change.
+    pub fn by_owner(&self) -> Vec<(String, u64)> {
+        let mut totals: BTreeMap<&str, u64> = BTreeMap::new();
+        for hot in &self.hot {
+            *totals.entry(hot.owner.as_str()).or_insert(0) += hot.self_samples;
+        }
+        let mut owners: Vec<(String, u64)> =
+            totals.into_iter().map(|(name, count)| (name.to_string(), count)).collect();
+        owners.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+        owners
+    }
+
     pub fn yours(&self, own: &[String]) -> Vec<&Hot> {
         self.hot
             .iter()
@@ -124,7 +154,8 @@ where
 
     // A key that is the *function*, not the address: one function occupies
     // many addresses, and a ranking by address is a ranking of basic blocks.
-    let mut self_counts: BTreeMap<String, (u64, Option<String>, Option<u32>, bool)> =
+    #[allow(clippy::type_complexity)]
+    let mut self_counts: BTreeMap<String, (u64, Option<String>, Option<u32>, bool, String)> =
         BTreeMap::new();
     let mut total_counts: BTreeMap<String, u64> = BTreeMap::new();
     let mut unresolved = 0u64;
@@ -136,11 +167,18 @@ where
             Some(resolved) if !resolved.is_empty() => {
                 let innermost = &resolved.locations[0];
                 let name = innermost.function.clone().unwrap_or_else(|| "<unknown>".to_string());
+                // The physical frame is the last location: everything above it
+                // was inlined into it.
+                let owner = resolved
+                    .physical()
+                    .and_then(|physical| physical.function.clone())
+                    .unwrap_or_else(|| name.clone());
                 let entry = self_counts.entry(name).or_insert((
                     0,
                     innermost.file.clone(),
                     innermost.line,
                     innermost.inlined,
+                    owner,
                 ));
                 entry.0 += count;
             }
@@ -164,13 +202,14 @@ where
 
     let mut hot: Vec<Hot> = self_counts
         .into_iter()
-        .map(|(function, (self_samples, file, line, inlined))| Hot {
+        .map(|(function, (self_samples, file, line, inlined, owner))| Hot {
             total_samples: total_counts.get(&function).copied().unwrap_or(self_samples),
             function,
             file,
             line,
             self_samples,
             inlined,
+            owner,
         })
         .collect();
 
@@ -180,6 +219,7 @@ where
     for (function, total) in total_counts {
         if !hot.iter().any(|entry| entry.function == function) {
             hot.push(Hot {
+                owner: function.clone(),
                 function,
                 file: None,
                 line: None,

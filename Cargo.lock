@@ -825,6 +825,7 @@ dependencies = [
  "binmap-core",
  "binmap-crash",
  "binmap-measure",
+ "binmap-perf",
  "binmap-session",
  "binmap-verify",
  "binmap-web",

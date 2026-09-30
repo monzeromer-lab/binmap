@@ -18,7 +18,7 @@
 //! end of the stack produces frames out of whatever integers happen to be in
 //! memory, and they look exactly like real frames.
 
-use crate::dump::CoreDump;
+use crate::memory::Memory;
 use crate::modules::Modules;
 use crate::registers::{DwarfRegister, Registers};
 use binmap_core::error::Result;
@@ -173,12 +173,7 @@ pub const FRAME_LIMIT: usize = 512;
 /// mapped file its program counter is in, and each module has its own load
 /// bias. Using the executable's tables for a libc frame does not fail — it
 /// decodes something, and the something is wrong.
-pub fn walk(
-    dump: &CoreDump,
-    core_data: &[u8],
-    modules: &Modules,
-    registers: &Registers,
-) -> Result<Stack> {
+pub fn walk(memory: &dyn Memory, modules: &Modules, registers: &Registers) -> Result<Stack> {
     let mut context = UnwindContext::new();
     let mut frames = Vec::new();
     let mut current = registers.clone();
@@ -249,7 +244,7 @@ pub fn walk(
             Some(rule) => match rule {
                 RegisterRule::Offset(offset) => {
                     let at = cfa.wrapping_add(offset as u64);
-                    match dump.read_u64(core_data, at) {
+                    match memory.read_u64(at) {
                         Some(value) => value,
                         None => break StoppedBecause::MemoryNotInTheCore { at },
                     }
@@ -272,13 +267,11 @@ pub fn walk(
         // something the core stored". A core routinely omits file-backed
         // executable pages, so checking only the stored segments rejected
         // every return into a shared library.
-        let mapped = dump.mappings.iter().any(|mapping| mapping.contains(return_address));
-        let stored = dump.segments.iter().any(|segment| segment.contains(return_address));
-        if !mapped && !stored {
+        if !memory.is_mapped(return_address) {
             break StoppedBecause::ImplausibleReturnAddress { value: return_address };
         }
 
-        let mut next = build_caller_registers(&current, row, cfa, dump, core_data);
+        let mut next = build_caller_registers(&current, row, cfa, memory);
         let previous_sp = current.stack_pointer().unwrap_or(0);
         set(&mut next, DwarfRegister::RETURN_ADDRESS, return_address);
         set(&mut next, DwarfRegister::RSP, cfa);
@@ -305,8 +298,7 @@ fn build_caller_registers(
     current: &Registers,
     row: &gimli::UnwindTableRow<usize>,
     cfa: u64,
-    dump: &CoreDump,
-    core_data: &[u8],
+    memory: &dyn Memory,
 ) -> Registers {
     let mut slots: Vec<u64> = (0..crate::registers::PtraceSlot::COUNT)
         .map(|slot| {
@@ -322,9 +314,7 @@ fn build_caller_registers(
         let Some(slot) = register.ptrace_slot() else { continue };
         let Some(rule) = row.register(gimli::Register(number)) else { continue };
         let value = match rule {
-            RegisterRule::Offset(offset) => {
-                dump.read_u64(core_data, cfa.wrapping_add(offset as u64))
-            }
+            RegisterRule::Offset(offset) => memory.read_u64(cfa.wrapping_add(offset as u64)),
             RegisterRule::ValOffset(offset) => Some(cfa.wrapping_add(offset as u64)),
             RegisterRule::Register(other) => current.get(DwarfRegister(other.0)),
             // `SameValue` and `Undefined` both mean "do not change it here";

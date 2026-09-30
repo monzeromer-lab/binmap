@@ -1,0 +1,18 @@
+[package]
+name = "hotloop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A program whose hot function is known, so an injected regression has a right answer."
+
+[[bin]]
+name = "hotloop"
+path = "src/main.rs"
+
+[profile.release]
+debug = 2
+strip = "none"
+# Frame pointers, so a sampler that cannot use CFI still gets real stacks —
+# and so the two paths can be compared.
+[profile.release.package."*"]
+opt-level = 3

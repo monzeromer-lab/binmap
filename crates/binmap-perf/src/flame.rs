@@ -227,24 +227,30 @@ pub fn compare(
     left: &Attributed,
     right: &Attributed,
 ) -> Vec<Change> {
-    let mut names: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-    names.extend(left.hot.iter().map(|hot| hot.function.as_str()));
-    names.extend(right.hot.iter().map(|hot| hot.function.as_str()));
+    // Compared by *owner*, not by innermost location. "Which function
+    // regressed" is a question about a function someone can edit, and time
+    // spent in an inlined stdlib helper belongs to the function that inlined
+    // it. Comparing by innermost location made a real injected regression in
+    // `hotloop::transform` invisible, because every sample of it was
+    // attributed to `<u64>::rotate_left`.
+    let before_owners: std::collections::BTreeMap<String, u64> =
+        left.by_owner().into_iter().collect();
+    let after_owners: std::collections::BTreeMap<String, u64> =
+        right.by_owner().into_iter().collect();
 
-    let find = |attributed: &Attributed, name: &str| {
-        attributed
-            .hot
-            .iter()
-            .find(|hot| hot.function == name)
-            .map(|hot| hot.self_samples)
-            .unwrap_or(0)
+    let mut names: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    names.extend(before_owners.keys().map(String::as_str));
+    names.extend(after_owners.keys().map(String::as_str));
+
+    let find = |owners: &std::collections::BTreeMap<String, u64>, name: &str| {
+        owners.get(name).copied().unwrap_or(0)
     };
 
     let mut changes: Vec<Change> = names
         .into_iter()
         .map(|name| {
-            let first = find(left, name);
-            let second = find(right, name);
+            let first = find(&before_owners, name);
+            let second = find(&after_owners, name);
             // Either profile's error could be the larger, and the comparison
             // is only as good as the worse of the two.
             let distinguishable =

@@ -15,5 +15,6 @@ pub mod attribute;
 pub mod capture;
 pub mod flame;
 pub mod sample;
+pub mod sampler;
 
 pub use sample::{Profile, Source, Stack};

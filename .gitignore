@@ -17,3 +17,4 @@ corpus/web-heavy/dist/
 # binary that produced them. `corpus/crasher/capture.sh` regenerates the pair.
 corpus/crasher/cores/
 corpus/crasher/target/
+corpus/hotloop/target/

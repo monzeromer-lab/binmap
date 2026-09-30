@@ -83,6 +83,11 @@ enum Command {
     /// three for at least 70%, and the deterministic layer symbolizing at
     /// least 95% of frames.
     Acceptance2(Acceptance2Options),
+    /// Measure Phase 3's acceptance criterion.
+    ///
+    /// Injects regressions into a program with a known hot function and checks
+    /// the responsible one is identified in the top three.
+    Acceptance3(Acceptance3Options),
     /// Serve the tool registry over MCP on stdio (`A2.2`).
     ///
     /// This is what an external agent spawns. It speaks line-delimited
@@ -95,6 +100,17 @@ struct Acceptance2Options {
     /// The crasher corpus, holding `cores/` and the built binary.
     #[arg(default_value = "corpus/crasher")]
     root: PathBuf,
+}
+
+#[derive(Args, Debug, Clone)]
+struct Acceptance3Options {
+    /// The benchmark corpus.
+    #[arg(default_value = "corpus/hotloop")]
+    root: PathBuf,
+    /// How long to sample each profile for. Longer is more samples and less
+    /// noise, at the cost of a slower run.
+    #[arg(long, default_value = "6")]
+    seconds: u64,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -210,6 +226,7 @@ fn main() -> ExitCode {
         Command::Crash(options) => crash(options),
         Command::Mcp(options) => mcp(options),
         Command::Acceptance2(options) => acceptance_phase_two(options),
+        Command::Acceptance3(options) => acceptance_phase_three(options),
     };
 
     match result {
@@ -1106,8 +1123,12 @@ fn crash(options: &CrashOptions) -> Result<bool, String> {
         println!("  {} {}", missing.path, missing.because);
     }
 
-    let stack = unwind::walk(&dump, &core_data, &loaded, &thread.registers)
-        .map_err(|error| error.to_string())?;
+    let stack = unwind::walk(
+        &binmap_crash::memory::CoreMemory { dump: &dump, data: &core_data },
+        &loaded,
+        &thread.registers,
+    )
+    .map_err(|error| error.to_string())?;
 
     // One symbolizer per module, built from every frame that landed in it.
     let mut by_module: std::collections::BTreeMap<&str, Vec<u64>> = Default::default();
@@ -1324,8 +1345,12 @@ fn acceptance_phase_two(options: &Acceptance2Options) -> Result<bool, String> {
         let _ = derived;
 
         let loaded = modules::Modules::load(&dump, Some(("crasher", &binary)));
-        let stack = unwind::walk(&dump, &core_data, &loaded, &thread.registers)
-            .map_err(|error| error.to_string())?;
+        let stack = unwind::walk(
+            &binmap_crash::memory::CoreMemory { dump: &dump, data: &core_data },
+            &loaded,
+            &thread.registers,
+        )
+        .map_err(|error| error.to_string())?;
 
         let mut by_module: std::collections::BTreeMap<&str, Vec<u64>> = Default::default();
         for frame in &stack.frames {
@@ -1403,6 +1428,144 @@ fn acceptance_phase_two(options: &Acceptance2Options) -> Result<bool, String> {
     );
 
     let passed = examined >= 20 && line_rate >= 0.70 && symbol_rate >= 0.95;
+    println!("\n{}", if passed { "PASS" } else { "FAIL" });
+    Ok(passed)
+}
+
+/// Phase 3's acceptance criterion, measured rather than asserted.
+///
+/// > On an injected regression of 10% or more, the responsible function is
+/// > identified in the top three for at least 70% of cases.
+///
+/// The regression is injected through the environment rather than by
+/// rebuilding, because the same binary profiled twice is the only way to know
+/// a difference came from the change rather than from the compiler deciding
+/// something else this time.
+fn acceptance_phase_three(options: &Acceptance3Options) -> Result<bool, String> {
+    use binmap_perf::attribute::attribute;
+    use binmap_perf::flame::compare;
+    use binmap_perf::sampler::{Plan, profile_with};
+
+    let program = options.root.join("target/release/hotloop");
+    if !program.exists() {
+        return Err(format!(
+            "{} is not built. Run `cargo build --release` in {}.",
+            program.display(),
+            options.root.display()
+        ));
+    }
+
+    let plan = Plan {
+        interval: std::time::Duration::from_millis(5),
+        duration: std::time::Duration::from_secs(options.seconds),
+    };
+
+    // Resolve addresses through the modules a profile reports, which is the
+    // same layer the crash analyser uses.
+    let resolve_with = |modules: &binmap_crash::modules::Modules,
+                        profile: &binmap_perf::sample::Profile| {
+        let mut by_module: std::collections::BTreeMap<String, Vec<u64>> = Default::default();
+        for stack in profile.stacks.keys() {
+            for address in &stack.addresses {
+                if let Some((module, link)) = modules
+                    .containing(*address)
+                    .and_then(|module| module.to_link_time(*address).map(|l| (module, l)))
+                {
+                    by_module.entry(module.path.clone()).or_default().push(link);
+                }
+            }
+        }
+        by_module
+            .iter()
+            .filter_map(|(module, addresses)| {
+                binmap_crash::symbolize::Symbolizer::load(std::path::Path::new(module), addresses)
+                    .ok()
+                    .map(|symbolizer| (module.clone(), symbolizer))
+            })
+            .collect::<std::collections::BTreeMap<String, _>>()
+    };
+
+    println!("baseline profile ({}s)...", options.seconds);
+    let (baseline, baseline_modules) =
+        profile_with(&program, &[], &[], plan).map_err(|error| error.to_string())?;
+    println!("  {}", baseline.describe());
+    if !baseline.has_enough_samples() {
+        return Err(format!(
+            "the baseline collected {} samples, which is too few to rank anything. Sample for \
+             longer with --seconds.",
+            baseline.total()
+        ));
+    }
+
+    let baseline_symbolizers = resolve_with(&baseline_modules, &baseline);
+    let baseline_attributed = attribute(&baseline, |address| {
+        baseline_modules
+            .containing(address)
+            .and_then(|module| module.to_link_time(address).map(|l| (module.path.clone(), l)))
+            .and_then(|(path, link)| baseline_symbolizers.get(&path).map(|s| s.resolve(link)))
+            .unwrap_or_default()
+    });
+
+    // Each worker, made slower by a factor that puts the change well over the
+    // criterion's 10%.
+    let workers = ["checksum", "transform", "compress", "validate"];
+    let factors = [200u32, 300, 400];
+
+    let mut found = 0usize;
+    let mut cases = 0usize;
+
+    println!("\n{:<12} {:>7}  {:>5}  verdict", "injected", "factor", "rank");
+    for worker in workers {
+        for factor in factors {
+            cases += 1;
+            let environment =
+                vec![(format!("HOTLOOP_{}", worker.to_uppercase()), factor.to_string())];
+
+            let (regressed, modules) = profile_with(&program, &[], &environment, plan)
+                .map_err(|error| error.to_string())?;
+            let symbolizers = resolve_with(&modules, &regressed);
+            let attributed = attribute(&regressed, |address| {
+                modules
+                    .containing(address)
+                    .and_then(|m| m.to_link_time(address).map(|l| (m.path.clone(), l)))
+                    .and_then(|(path, link)| symbolizers.get(&path).map(|s| s.resolve(link)))
+                    .unwrap_or_default()
+            });
+
+            let changes = compare(&baseline, &regressed, &baseline_attributed, &attributed);
+
+            // The ranking a reader would read: significant regressions,
+            // biggest first.
+            let ranked: Vec<&str> = changes
+                .iter()
+                .filter(|change| change.significant_delta.unwrap_or(0) > 0)
+                .map(|change| change.function.as_str())
+                .collect();
+
+            let expected = format!("hotloop::{worker}");
+            let rank = ranked.iter().position(|name| *name == expected);
+            let within_three = rank.is_some_and(|position| position < 3);
+            if within_three {
+                found += 1;
+            }
+
+            println!(
+                "{worker:<12} {factor:>6}x  {:>5}  {}",
+                rank.map(|r| (r + 1).to_string()).unwrap_or_else(|| "—".into()),
+                if within_three { "found" } else { "NOT in the top three" }
+            );
+        }
+    }
+
+    let rate = found as f64 / cases.max(1) as f64;
+    println!("\nPhase 3 acceptance over {cases} injected regressions:");
+    println!(
+        "  {} the responsible function is in the top three for {:.0}% (needs 70%)",
+        if rate >= 0.70 { "PASS" } else { "FAIL" },
+        rate * 100.0
+    );
+
+    let passed = rate >= 0.70;
     println!("\n{}", if passed { "PASS" } else { "FAIL" });
     Ok(passed)
 }
