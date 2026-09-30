@@ -241,13 +241,20 @@ pub fn backend_for(
     model: &str,
     transport: std::sync::Arc<dyn crate::openai::HttpTransport>,
 ) -> Result<Box<dyn ModelBackend>> {
-    let model_spec = spec.model(model).ok_or_else(|| {
-        Error::Other(format!("{} does not offer a model `{model}`", spec.display))
+    // A local runner hosts whatever its owner pulled, so an unlisted name is
+    // accepted there and refused for a provider that bills for it.
+    let model_spec = spec.model_or_unlisted(model).ok_or_else(|| {
+        let known: Vec<&str> = spec.models.iter().map(|model| model.id.as_ref()).collect();
+        Error::Other(format!(
+            "{} does not offer a model `{model}`. It has: {}",
+            spec.display,
+            known.join(", ")
+        ))
     })?;
 
     match spec.shape {
         crate::provider::ApiShape::OpenAiCompatible => {
-            Ok(Box::new(crate::openai::OpenAiCompatibleBackend::new(spec, model_spec, transport)))
+            Ok(Box::new(crate::openai::OpenAiCompatibleBackend::new(spec, &model_spec, transport)))
         }
         // Claude's own shape is Phase 1.5's row to add; until it exists,
         // saying so is better than quietly sending Anthropic an

@@ -292,14 +292,14 @@ fn the_backend_posts_to_the_chat_completions_path_of_its_base_url() {
     let backend = OpenAiCompatibleBackend::new(spec, model, transport.clone())
         .with_base_url("http://127.0.0.1:9999/v1/");
     let response = backend
-        .complete(CompletionRequest::new(model.id, vec![Message::user("hi")]))
+        .complete(CompletionRequest::new(model.id.clone(), vec![Message::user("hi")]))
         .expect("the scripted transport replies");
 
     assert_eq!(response.content, "hello");
     assert_eq!(response.usage.input_tokens, 10);
     assert_eq!(response.usage.output_tokens, 5);
     // The trailing slash must not produce a double slash in the path.
-    assert_eq!(transport.last_body()["model"], model.id);
+    assert_eq!(transport.last_body()["model"], model.id.as_ref());
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn no_transport_configured_is_a_sentence_rather_than_a_hang() {
     let backend = OpenAiCompatibleBackend::new(spec, model, Arc::new(UnavailableTransport));
 
     let error = backend
-        .complete(CompletionRequest::new(model.id, vec![Message::user("hi")]))
+        .complete(CompletionRequest::new(model.id.clone(), vec![Message::user("hi")]))
         .expect_err("there is nothing to talk to");
     assert!(error.to_string().contains("no HTTP transport"), "{error}");
 }

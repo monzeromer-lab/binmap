@@ -14,6 +14,7 @@
 
 use binmap_core::reasoner::{Mode, Reasoner, ReasonerChoice, Unavailable};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 /// Which wire format a provider speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,8 +120,11 @@ impl Quirks {
 /// would be a provider a config file could invent.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ModelSpec {
-    pub id: &'static str,
-    pub display: &'static str,
+    /// `Cow` rather than `&'static str` because a local runner hosts whatever
+    /// its owner pulled: the table's own rows are static, and a name typed by
+    /// the user is owned. The alternative was leaking the string.
+    pub id: Cow<'static, str>,
+    pub display: Cow<'static, str>,
     pub capabilities: Capabilities,
 }
 
@@ -154,6 +158,47 @@ impl ProviderSpec {
     pub fn model(&self, id: &str) -> Option<&ModelSpec> {
         self.models.iter().find(|model| model.id == id)
     }
+
+    /// Whether this provider will accept a model name that is not in the table.
+    ///
+    /// A local runner hosts whatever its owner pulled. Listing one name and
+    /// refusing every other made the table a whitelist of models we happen to
+    /// have heard of, which for a local runner is nobody's business but the
+    /// owner's — someone with `llama3.2` pulled could not select it.
+    ///
+    /// Cloud providers stay closed: there the name is billed against an
+    /// account, and a typo should be caught here rather than charged for.
+    pub fn accepts_any_model(&self) -> bool {
+        !self.cloud
+    }
+
+    /// The spec to use for `id`, inventing one for an unlisted local model.
+    ///
+    /// The invented capabilities are deliberately conservative — a small
+    /// context and no parallel tool calls — because we know nothing about a
+    /// model we have never seen, and over-promising its context window is how
+    /// a prompt silently overflows.
+    pub fn model_or_unlisted(&self, id: &str) -> Option<ModelSpec> {
+        if let Some(known) = self.model(id) {
+            return Some(known.clone());
+        }
+        if !self.accepts_any_model() {
+            return None;
+        }
+        let fallback = self.default_model()?;
+        Some(ModelSpec {
+            id: Cow::Owned(id.to_string()),
+            display: Cow::Owned(format!("{id} (unlisted)")),
+            capabilities: Capabilities {
+                // Whatever the runner actually has, assume the smaller of what
+                // we list and something modest.
+                context_window: fallback.capabilities.context_window.min(8_192),
+                max_output: fallback.capabilities.max_output.min(4_096),
+                parallel_tool_calls: false,
+                ..fallback.capabilities.clone()
+            },
+        })
+    }
 }
 
 const fn window(context_window: usize, max_output: usize) -> Capabilities {
@@ -170,8 +215,8 @@ const fn window(context_window: usize, max_output: usize) -> Capabilities {
 
 /// Claude.
 const ANTHROPIC_MODELS: &[ModelSpec] = &[ModelSpec {
-    id: "claude-sonnet-5-5",
-    display: "Claude Sonnet 5.5",
+    id: Cow::Borrowed("claude-sonnet-5-5"),
+    display: Cow::Borrowed("Claude Sonnet 5.5"),
     capabilities: Capabilities {
         reasoning_effort: true,
         vision: true,
@@ -181,8 +226,8 @@ const ANTHROPIC_MODELS: &[ModelSpec] = &[ModelSpec {
 }];
 
 const OPENAI_MODELS: &[ModelSpec] = &[ModelSpec {
-    id: "gpt-5",
-    display: "GPT-5",
+    id: Cow::Borrowed("gpt-5"),
+    display: Cow::Borrowed("GPT-5"),
     capabilities: Capabilities {
         reasoning_effort: true,
         vision: true,
@@ -192,8 +237,8 @@ const OPENAI_MODELS: &[ModelSpec] = &[ModelSpec {
 }];
 
 const DEEPSEEK_MODELS: &[ModelSpec] = &[ModelSpec {
-    id: "deepseek-reasoner",
-    display: "DeepSeek R1",
+    id: Cow::Borrowed("deepseek-reasoner"),
+    display: Cow::Borrowed("DeepSeek R1"),
     capabilities: Capabilities {
         reasoning_effort: true,
         // The reasoner will not interleave tool calls with its reasoning, so
@@ -205,14 +250,14 @@ const DEEPSEEK_MODELS: &[ModelSpec] = &[ModelSpec {
 }];
 
 const MOONSHOT_MODELS: &[ModelSpec] = &[ModelSpec {
-    id: "kimi-k2",
-    display: "Kimi K2",
+    id: Cow::Borrowed("kimi-k2"),
+    display: Cow::Borrowed("Kimi K2"),
     capabilities: Capabilities { cost_per_mtok: Some((0.6, 2.5)), ..window(128_000, 16_000) },
 }];
 
 const ZAI_MODELS: &[ModelSpec] = &[ModelSpec {
-    id: "glm-4.6",
-    display: "GLM-4.6",
+    id: Cow::Borrowed("glm-4.6"),
+    display: Cow::Borrowed("GLM-4.6"),
     capabilities: Capabilities { cost_per_mtok: Some((0.6, 2.2)), ..window(200_000, 32_000) },
 }];
 
@@ -222,8 +267,8 @@ const ZAI_MODELS: &[ModelSpec] = &[ModelSpec {
 /// model, not for a frontier one. A prompt that only works on Claude is a
 /// prompt that will embarrass us on a laptop.
 const LOCAL_MODELS: &[ModelSpec] = &[ModelSpec {
-    id: "qwen3-coder",
-    display: "Qwen3 Coder (local)",
+    id: Cow::Borrowed("qwen3-coder"),
+    display: Cow::Borrowed("Qwen3 Coder (local)"),
     capabilities: Capabilities {
         parallel_tool_calls: false,
         // Free, which `cost_per_mtok: None` means — as distinct from costing

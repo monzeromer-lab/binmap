@@ -176,7 +176,7 @@ fn a_provider_that_will_not_interleave_tools_with_reasoning_asks_for_a_separate_
 fn a_model_name_that_is_not_offered_is_refused_rather_than_guessed() {
     let local = provider("local").unwrap();
     assert!(local.model("gpt-5").is_none(), "the local runner does not host GPT-5");
-    assert!(local.model(local.default_model().unwrap().id).is_some());
+    assert!(local.model(&local.default_model().unwrap().id).is_some());
 }
 
 // --- the table as the picker reads it (`U1.3`) ---
@@ -312,4 +312,79 @@ fn a_reasoner_id_survives_into_a_session_unchanged() {
     let count = ids.len();
     ids.dedup();
     assert_eq!(ids.len(), count, "duplicate reasoner ids would make a session ambiguous");
+}
+
+// --- a local runner hosts whatever its owner pulled -------------------------
+
+#[test]
+fn a_local_runner_accepts_a_model_name_that_is_not_in_the_table() {
+    // The table listed one local model and refused every other, which made it
+    // a whitelist of models we happen to have heard of. Someone with
+    // `llama3.2` pulled could not select it.
+    let local = provider("local").expect("a local provider");
+    assert!(local.accepts_any_model());
+
+    let unlisted = local
+        .model_or_unlisted("llama3.2:3b")
+        .expect("a local runner hosts whatever its owner pulled");
+    assert_eq!(unlisted.id, "llama3.2:3b");
+    assert!(
+        unlisted.display.contains("unlisted"),
+        "the row says we do not know it: {}",
+        unlisted.display
+    );
+}
+
+#[test]
+fn an_unlisted_model_is_given_conservative_capabilities() {
+    // We know nothing about a model we have never seen, and over-promising its
+    // context window is how a prompt silently overflows.
+    let local = provider("local").unwrap();
+    let listed = local.default_model().unwrap();
+    let unlisted = local.model_or_unlisted("something-new").unwrap();
+
+    assert!(unlisted.capabilities.context_window <= listed.capabilities.context_window);
+    assert!(unlisted.capabilities.max_output <= unlisted.capabilities.context_window);
+    assert!(
+        !unlisted.capabilities.parallel_tool_calls,
+        "an unknown model must not be assumed to support parallel calls"
+    );
+}
+
+#[test]
+fn a_cloud_provider_still_refuses_a_model_it_does_not_offer() {
+    // There the name is billed against an account, so a typo should be caught
+    // here rather than charged for.
+    let openai = provider("openai").expect("openai is in the table");
+    assert!(!openai.accepts_any_model());
+    assert!(openai.model_or_unlisted("gpt-4-turbo-typo").is_none());
+    assert!(openai.model_or_unlisted("gpt-5").is_some(), "a listed model still works");
+}
+
+#[test]
+fn a_listed_local_model_is_used_as_listed_rather_than_invented() {
+    let local = provider("local").unwrap();
+    let listed = local.default_model().unwrap().clone();
+    let resolved = local.model_or_unlisted(&listed.id).unwrap();
+
+    assert_eq!(resolved, listed, "a known model keeps its real capabilities");
+    assert!(!resolved.display.contains("unlisted"));
+}
+
+#[test]
+fn refusing_an_unknown_cloud_model_names_the_ones_it_has() {
+    // "does not offer a model X" without saying what it does offer leaves the
+    // reader guessing at spelling.
+    let openai = provider("openai").unwrap();
+    // `Box<dyn ModelBackend>` is not Debug, so unwrap the error by hand.
+    let message = match binmap_agent::backend::backend_for(
+        openai,
+        "gpt-4-turbo-typo",
+        std::sync::Arc::new(binmap_agent::UnavailableTransport),
+    ) {
+        Ok(_) => panic!("an unknown cloud model must be refused"),
+        Err(error) => error.to_string(),
+    };
+    assert!(message.contains("gpt-4-turbo-typo"), "{message}");
+    assert!(message.contains("gpt-5"), "it names what is available: {message}");
 }
