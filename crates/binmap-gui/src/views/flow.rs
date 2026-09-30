@@ -154,60 +154,82 @@ fn environment(facts: &FlowFacts, theme: Theme, dispatch: &Dispatch) -> impl Int
                 ProbeStatus::Missing => ("missing", Tone::Fail),
                 _ => ("warn", Tone::Warn),
             };
+            // Two rows rather than one. A fix command is long, and sharing a
+            // row with it squeezed the detail column to nothing — which does
+            // not truncate, it wraps one character per line and makes the row
+            // three hundred pixels tall.
             div()
                 .flex()
-                .flex_row()
-                .items_center()
-                .gap(space::S10)
-                .min_h(px(34.))
-                .child(div().w(px(66.)).flex_none().child(Badge::new(label, tone, theme).caps()))
+                .flex_col()
+                .gap(space::S2)
+                .py(space::S4)
                 .child(
                     div()
-                        .flex_none()
-                        .w(px(200.))
-                        .font_family("JetBrains Mono")
-                        .text_size(type_scale::FS_12)
-                        .text_color(c.text_primary)
-                        .child(name.clone()),
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(space::S10)
+                        .child(
+                            div()
+                                .w(px(66.))
+                                .flex_none()
+                                .child(Badge::new(label, tone, theme).caps()),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .font_family("JetBrains Mono")
+                                .text_size(type_scale::FS_12)
+                                .text_color(c.text_primary)
+                                .child(name.clone()),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_size(type_scale::FS_11)
+                                .text_color(c.text_muted)
+                                .child(detail),
+                        ),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(type_scale::FS_11)
-                        .text_color(c.text_muted)
-                        .child(detail),
-                )
-                // The fix, as a command. Not a description of one.
                 .when_some(remedy, |d, remedy| {
                     d.child(
                         div()
-                            .flex_none()
-                            .font_family("JetBrains Mono")
-                            .text_size(type_scale::FS_11)
-                            .text_color(c.status_warn)
-                            .child(remedy),
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap(space::S8)
+                            .pl(px(76.))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .font_family("JetBrains Mono")
+                                    .text_size(type_scale::FS_11)
+                                    .text_color(c.status_warn)
+                                    .child(remedy),
+                            )
+                            .child(
+                                clickable(
+                                    div().id(SharedString::from(format!("flow-recheck-{name}"))),
+                                    &dispatch,
+                                    Action::RecheckEnvironment,
+                                )
+                                .flex()
+                                .flex_none()
+                                .items_center()
+                                .h(space::CONTROL_H_SM)
+                                .px(space::S8)
+                                .rounded(radius::CONTROL)
+                                .border_1()
+                                .border_color(c.border_default)
+                                .hover(|d| d.bg(c.surface_hover))
+                                .text_size(type_scale::FS_11)
+                                .text_color(c.text_secondary)
+                                .child("Re-check"),
+                            ),
                     )
                 })
-                .child(
-                    clickable(
-                        div().id(SharedString::from(format!("flow-recheck-{name}"))),
-                        &dispatch,
-                        Action::RecheckEnvironment,
-                    )
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .h(space::CONTROL_H_SM)
-                    .px(space::S8)
-                    .rounded(radius::CONTROL)
-                    .border_1()
-                    .border_color(c.border_default)
-                    .hover(|d| d.bg(c.surface_hover))
-                    .text_size(type_scale::FS_11)
-                    .text_color(c.text_secondary)
-                    .child("Re-check"),
-                )
         }))
 }
 

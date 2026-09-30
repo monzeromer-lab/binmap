@@ -83,6 +83,8 @@ pub fn probe_all(runner: &ToolRunner) -> Vec<Probe> {
 /// matters, because Binmap can pass the flag on analysis builds itself.
 fn symbol_mangling(runner: &ToolRunner) -> Probe {
     let name = "symbol-mangling-version";
+
+    // Explicitly configured, in which case we know.
     let configured = runner
         .run(ToolInvocation::new(
             "cargo",
@@ -92,17 +94,19 @@ fn symbol_mangling(runner: &ToolRunner) -> Probe {
         .unwrap_or(false);
 
     if configured {
-        Probe::present(PROJECT, name, "v0 — generic arguments survive into symbol names")
-    } else {
-        Probe::needs(
-            PROJECT,
-            name,
-            ProbeStatus::Unusable,
-            "legacy; generic grouping will degrade to prefix matching in Phase 1",
-            "cargo build --config 'build.rustflags=[\"-Csymbol-mangling-version=v0\"]'",
-        )
-        .with_action("Enable for analysis builds")
+        return Probe::present(PROJECT, name, "v0, set in your cargo config");
     }
+
+    // Otherwise the toolchain's default applies, and a probe cannot know what
+    // that produced without building something. Saying "legacy" here was a
+    // false claim: this toolchain defaults to v0, and attribution read v0 out
+    // of the binary while the panel said otherwise.
+    Probe::present(
+        PROJECT,
+        name,
+        "not set, so the toolchain default applies. Size attribution reports which scheme the \
+         binary actually used.",
+    )
 }
 
 /// A tool that answers `--version`.
@@ -408,9 +412,16 @@ mod tests {
             .expect("TOOLING §3.4 makes this a Phase 1 dependency");
         // Whatever this toolchain does, the probe says what it costs rather
         // than only what is set.
+        // Whatever it says, it does not claim to know something it cannot:
+        // the scheme a binary used is only knowable after building one.
         assert!(
-            mangling.detail.contains("v0") || mangling.detail.contains("degrade"),
+            mangling.detail.contains("v0") || mangling.detail.contains("toolchain default"),
             "{}",
+            mangling.detail
+        );
+        assert!(
+            !mangling.detail.contains("legacy"),
+            "the probe asserted a scheme it cannot observe: {}",
             mangling.detail
         );
     }

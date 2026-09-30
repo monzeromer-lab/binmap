@@ -130,11 +130,15 @@ impl RenderOnce for EnvironmentPanel {
                 let dispatch = std::rc::Rc::clone(&dispatch);
                 Section::titled(name, theme).flush().child(div().flex().flex_col().children(
                     probes.into_iter().map(move |probe| {
+                        let dispatch = std::rc::Rc::clone(&dispatch);
+                        // Two rows where there is a fix. A command is long,
+                        // and sharing one row with the detail squeezes one of
+                        // them to nothing — which does not truncate, it wraps
+                        // one character per line and makes the row enormous.
                         div()
                             .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(space::S8)
+                            .flex_col()
+                            .gap(space::S2)
                             .flex_none()
                             .px(space::S12)
                             .py(space::S6)
@@ -142,60 +146,75 @@ impl RenderOnce for EnvironmentPanel {
                             .border_color(c.border_subtle)
                             .child(
                                 div()
-                                    .flex_none()
-                                    .w(px(56.))
-                                    .child(status_badge(probe.status, theme)),
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .gap(space::S8)
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .w(px(56.))
+                                            .child(status_badge(probe.status, theme)),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .w(px(190.))
+                                            .font_family("JetBrains Mono")
+                                            .text_size(type_scale::FS_12)
+                                            .text_color(c.text_body)
+                                            .child(probe.name.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_size(type_scale::FS_11)
+                                            .text_color(c.text_muted)
+                                            .child(probe.detail.clone()),
+                                    ),
                             )
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .w(px(190.))
-                                    .font_family("JetBrains Mono")
-                                    .text_size(type_scale::FS_12)
-                                    .text_color(c.text_body)
-                                    .child(probe.name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_size(type_scale::FS_11)
-                                    .text_color(c.text_muted)
-                                    .child(probe.detail.clone()),
-                            )
-                            // The fix, as a command. Not a description of a
-                            // command — something a user can paste.
                             .when_some(probe.remedy.clone(), |d, remedy| {
                                 d.child(
                                     div()
-                                        .flex_none()
-                                        .font_family("JetBrains Mono")
-                                        .text_size(type_scale::FS_11)
-                                        .text_color(c.text_accent)
-                                        .child(remedy),
-                                )
-                            })
-                            .when_some(probe.action.clone(), |d, action| {
-                                d.child(
-                                    clickable(
-                                        div().id(SharedString::from(format!(
-                                            "probe-{}",
-                                            probe.name
-                                        ))),
-                                        &dispatch,
-                                        Action::RecheckEnvironment,
-                                    )
-                                    .flex()
-                                    .flex_none()
-                                    .items_center()
-                                    .h(space::CONTROL_H_SM)
-                                    .px(space::S8)
-                                    .rounded(radius::CONTROL)
-                                    .border_1()
-                                    .border_color(c.border_default)
-                                    .hover(|d| d.bg(c.surface_hover))
-                                    .text_size(type_scale::FS_11)
-                                    .text_color(c.text_secondary)
-                                    .child(action),
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap(space::S8)
+                                        .pl(px(64.))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .font_family("JetBrains Mono")
+                                                .text_size(type_scale::FS_11)
+                                                .text_color(c.text_accent)
+                                                .child(remedy),
+                                        )
+                                        .when_some(probe.action.clone(), |d, action| {
+                                            d.child(
+                                                clickable(
+                                                    div().id(SharedString::from(format!(
+                                                        "probe-{}",
+                                                        probe.name
+                                                    ))),
+                                                    &dispatch,
+                                                    Action::RecheckEnvironment,
+                                                )
+                                                .flex()
+                                                .flex_none()
+                                                .items_center()
+                                                .h(space::CONTROL_H_SM)
+                                                .px(space::S8)
+                                                .rounded(radius::CONTROL)
+                                                .border_1()
+                                                .border_color(c.border_default)
+                                                .hover(|d| d.bg(c.surface_hover))
+                                                .text_size(type_scale::FS_11)
+                                                .text_color(c.text_secondary)
+                                                .child(action),
+                                            )
+                                        }),
                                 )
                             })
                     }),
