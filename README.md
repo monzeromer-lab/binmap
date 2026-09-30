@@ -9,13 +9,33 @@ lto, codegen-units, panic, strip, overflow-checks — measures size, runtime and
 build time for each, verifies every one against your own tests, and derives the
 Pareto frontier over what it measured.
 
-**Status: Phase 1.5.** Two backends. For native Rust: configuration sweeps,
-size attribution — where the bytes went, which generic they came from, what
-category of cost it is, and what could be done about it. For JavaScript and
-TypeScript: source-map and bundler-metadata attribution, per-chunk sizes with
-the initial load marked, and a configuration sweep over the target level.
-Crash analysis, performance attribution and replay debugging are later phases;
-see [the implementation plan](docs/Binmap%20implementation%20plan.md).
+**Status: every phase in the plan implemented; four of them pass their own
+acceptance criterion, measured on every CI run.**
+
+| | Backend | What it does |
+|---|---|---|
+| Phase 0–1 | Rust | Configuration sweeps, size attribution, monomorphization, collapse strategies |
+| Phase 1.5 | JS/TS | Source maps, bundler metadata, three-number size, per-chunk initial load |
+| Phase 2 | Rust | Core dumps, CFI unwinding across modules, crash classification; MCP and ACP |
+| Phase 2.5 | C# | The ILC dependency graph, trim and AOT warnings, the NativeAOT matrix |
+| Phase 3 | all | Sampling, flamegraphs, differential profiling, V8 profiles |
+| Phase 4 | Rust | Replay preflight and GDB/MI reverse execution |
+
+```
+Phase 1   PASS  top three generics identified · 24.4% smaller · grounding 1.000
+Phase 2   PASS  correct line in top three for 90% (needs 70%)
+                deterministic layer symbolized 99% of frames (needs 95%)
+Phase 3   PASS  responsible function in top three for 100% (needs 70%)
+```
+
+**What has and has not met real artifacts.** Everything Rust, JavaScript and
+TypeScript is tested against output from real toolchains — cargo, esbuild,
+gdb, node. The C# backend reads shapes the documentation describes: there is
+no .NET SDK here, and `UNVERIFIED` lists the property names the design marks
+as changing across SDK versions. Replay is the same: `rr` is not installed and
+needs a kernel setting only root can change, so the GDB/MI shapes are gdb's
+documented ones. Both say so where a reader will see it rather than in a
+footnote.
 
 **On the web, size is three numbers.** Raw bytes are nearly irrelevant to a
 web user; what costs them latency is what crosses the network, and the two do
@@ -25,19 +45,26 @@ compression contexts. Every measurement records the gzip level and brotli
 quality that produced it, and the sweep names every configuration where the
 raw and transfer rankings disagree.
 
+**Profiling needs no elevated permissions.** `perf` wants
+`kernel.perf_event_paranoid ≤ 1`; binmap's sampler profiles a process it
+spawned itself, so it works wherever you can run the program. `binmap-eval
+ready` reports what your machine can do and the exact command for what it
+cannot.
+
 The model layer is real but optional. A reasoning loop drives any
 OpenAI-compatible provider, including a local runner, and it will not run a
 tool until the model has said what it believes and what would refute it.
-Claude's own wire shape arrives in Phase 1.5; until then the picker says so
-rather than failing at the first call. **Every analysis works with no model at
-all**, which is why "None" is listed in the reasoner picker beside the others
+Claude, OpenAI, DeepSeek, Kimi and Z.ai are table entries over two wire
+shapes. **Every analysis works with no model at all**, which is why "None" is listed in the reasoner picker beside the others
 rather than hidden in settings — and why the entire test suite runs on the null
 backend.
 
-Phase 1's criterion is measured rather than asserted, on every CI run:
+Each criterion is measured rather than asserted, on every CI run:
 
 ```
 cargo run --release -p binmap-eval -- acceptance1 corpus/stress
+cargo run --release -p binmap-eval -- acceptance2
+cargo run --release -p binmap-eval -- acceptance3
 ```
 
 And the web backend runs against two corpus projects, one clean and one
