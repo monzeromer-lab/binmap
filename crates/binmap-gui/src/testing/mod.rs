@@ -69,6 +69,7 @@ impl ScriptedEngine {
             id: id.to_string(),
             name: id.rsplit("::").next().unwrap_or(id).to_string(),
             family: TargetFamily::Rust,
+            kind: "bin".to_string(),
             package: id.split("::").next().unwrap_or(id).to_string(),
             manifest: "Cargo.toml".into(),
             capabilities: capabilities.iter().copied().collect::<Capabilities>(),
@@ -222,6 +223,10 @@ impl Engine for ScriptedEngine {
     fn restore_session(&self, target: &str) -> usize {
         self.restores.lock().expect("poisoned").push(target.to_string());
         0
+    }
+
+    fn attribution(&self) -> Option<serde_json::Value> {
+        None
     }
 
     fn sweeps(&self) -> Vec<SweepSummary> {

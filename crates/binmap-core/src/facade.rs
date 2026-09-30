@@ -220,6 +220,11 @@ pub enum Request {
     /// Resume a sweep that was cancelled, skipping configurations already
     /// measured (`F0.8`).
     ResumeSweep { run: RunId },
+    /// Attribute the artifact's bytes to where they came from (`F1.2`-`F1.4`).
+    ///
+    /// Builds the target's default configuration, reads its symbol table, and
+    /// reports per crate, per category and per generic.
+    AttributeSize { target: String },
     /// Measure the machine's noise floor by timing one unchanged binary
     /// repeatedly. Runs before any runtime comparison, and its result is shown
     /// beside every timing number.
@@ -286,6 +291,13 @@ pub trait Engine: Send + Sync {
     /// from the project being fast, and the interface says so rather than
     /// showing a blank number.
     fn benchmark_command(&self) -> Option<String>;
+
+    /// The most recent size attribution, as JSON.
+    ///
+    /// Opaque to this crate on purpose: the shape belongs to `binmap-binary`,
+    /// and `binmap-gui` must not gain a dependency on it to render the Size
+    /// Explorer (§2.4). The interface deserializes what it needs.
+    fn attribution(&self) -> Option<serde_json::Value>;
 
     /// Every sweep this session has run or restored.
     ///

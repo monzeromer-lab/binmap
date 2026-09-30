@@ -22,8 +22,20 @@ pub struct Target {
     /// The language family the project view groups by.
     pub family: TargetFamily,
     pub package: String,
+    /// What cargo builds this as: `bin`, `lib`, `cdylib`, `staticlib`.
+    ///
+    /// Carried because a package commonly has a lib and a bin *with the same
+    /// name*, and without this they are indistinguishable — the id collides,
+    /// the wrong one is selected, and the build produces both and measures
+    /// whichever appeared last.
+    #[serde(default = "bin_kind")]
+    pub kind: String,
     pub manifest: PathBuf,
     pub capabilities: Capabilities,
+}
+
+fn bin_kind() -> String {
+    "bin".to_string()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

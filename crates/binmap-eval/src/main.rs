@@ -15,13 +15,15 @@ use binmap_build::sweep::SweepState;
 use binmap_core::config::ProjectConfig;
 use binmap_core::event::{Cancellation, EngineEvent, EventSink, RunId};
 use binmap_core::evidence::ToolInvocation;
-use binmap_core::facade::{Engine, ProbeStatus};
+use binmap_core::facade::{Engine, ProbeStatus, Request};
 use binmap_session::SessionStore;
 use binmap_session::artifact::{SessionArtifact, TargetMetadata};
 use binmap_verify::GatePlan;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Development-only harness. Not a product surface.
 #[derive(Parser, Debug)]
@@ -46,6 +48,8 @@ enum Command {
     Targets(Options),
     /// Sweep the configuration matrix and print the frontier.
     Sweep(Options),
+    /// Attribute the artifact's bytes to crates, categories and generics.
+    Size(Options),
     /// Measure the phase's acceptance criterion and exit non-zero if it fails.
     Acceptance(Options),
 }
@@ -80,6 +84,7 @@ fn main() -> ExitCode {
         Command::Doctor(options) => doctor(options),
         Command::Targets(options) => targets(options),
         Command::Sweep(options) => sweep(options),
+        Command::Size(options) => size(options),
         Command::Acceptance(options) => acceptance(options),
     };
 
@@ -91,6 +96,74 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Attribute a target's bytes (`F1.2`-`F1.4`).
+///
+/// Through the engine rather than through `binmap-binary` directly, because
+/// `A1.3` requires every engine feature to be exercisable headlessly — and a
+/// feature reachable only from the interface is a layering violation.
+fn size(options: &Options) -> Result<bool, String> {
+    let engine = open(options)?;
+    let targets = engine.targets().map_err(|error| error.to_string())?;
+
+    let target = match &options.target {
+        Some(wanted) => targets
+            .iter()
+            .find(|target| &target.id == wanted)
+            .ok_or_else(|| format!("no target `{wanted}` in this project"))?,
+        None => targets
+            .iter()
+            .find(|target| target.capabilities.has(binmap_core::Capability::SizeAttribution))
+            .ok_or("no target in this project can have its bytes attributed")?,
+    };
+
+    let events = Arc::new(Printer::new());
+    let (_, _) = engine
+        .start(Request::AttributeSize { target: target.id.clone() }, events.clone())
+        .map_err(|error| error.to_string())?;
+    events.wait();
+
+    let Some(value) = engine.attribution() else {
+        return Ok(false);
+    };
+    let attribution: binmap_binary::attribution::Attribution =
+        serde_json::from_value(value).map_err(|error| error.to_string())?;
+
+    println!();
+    println!("by category:");
+    for (driver, bytes) in attribution.drivers.iter().take(10) {
+        println!("  {:<30} {:>12}", driver.label(), bytes);
+    }
+    println!();
+    println!("top crates:");
+    for group in attribution.crates.iter().take(10) {
+        println!("  {:<30} {:>12}  ({} symbols)", group.key, group.bytes, group.symbols);
+    }
+    println!();
+    println!("generics worth collapsing:");
+    for m in attribution.monomorphizations.iter().take(8) {
+        let path = if m.generic_path.len() > 52 { &m.generic_path[..52] } else { &m.generic_path };
+        println!(
+            "  {:<52} {:>9} over {:>3}  (collapsible {})",
+            path,
+            m.total_bytes,
+            m.instantiations,
+            m.collapsible_bytes()
+        );
+    }
+    println!();
+    println!(
+        "{} bytes attributed, {:.1}% of sizes inferred, generic arguments {}",
+        attribution.attributed_bytes,
+        attribution.inferred_fraction * 100.0,
+        if attribution.generic_arguments_available {
+            "available"
+        } else {
+            "NOT available (legacy mangling)"
+        }
+    );
+    Ok(true)
 }
 
 fn open(options: &Options) -> Result<BinmapEngine, String> {
@@ -141,10 +214,30 @@ fn targets(options: &Options) -> Result<bool, String> {
 /// Prints events as they arrive, which is also a check that they arrive at all
 /// — a sweep that reported nothing until the end would look identical from
 /// here if this printed a summary instead.
-struct Printer;
+struct Printer {
+    /// Set by the run's terminal event. A detached analysis has to be waited
+    /// for, and the terminal event is the only honest signal that it is over.
+    done: AtomicBool,
+}
+
+impl Printer {
+    fn new() -> Self {
+        Self { done: AtomicBool::new(false) }
+    }
+
+    /// Block until the run reports a terminal event.
+    fn wait(&self) {
+        while !self.done.load(Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+}
 
 impl EventSink for Printer {
     fn emit(&self, event: EngineEvent) {
+        if event.is_terminal() {
+            self.done.store(true, Ordering::SeqCst);
+        }
         match event {
             EngineEvent::Started { description, total, .. } => {
                 println!(
@@ -187,7 +280,7 @@ fn run_sweep(engine: &BinmapEngine, options: &Options) -> Result<(SweepState, St
     };
 
     let run = RunId("eval-0001".into());
-    engine.sweep_blocking(run.clone(), &target, &Printer, &Cancellation::new());
+    engine.sweep_blocking(run.clone(), &target, &Printer::new(), &Cancellation::new());
     let state =
         engine.run_state(&run).ok_or("the sweep left no state, which should be impossible")?;
     Ok((state, target.id.clone()))

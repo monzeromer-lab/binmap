@@ -35,6 +35,27 @@ pub fn profiles(root: &Path) -> Vec<String> {
     found
 }
 
+/// Give colliding targets distinct identifiers.
+///
+/// A package very commonly has a library and a binary with the same name —
+/// `src/lib.rs` and `src/main.rs` — and both then answer to `package::name`.
+/// Selecting one got the other: attribution asked for the binary, received the
+/// library, and refused itself for not supporting size attribution.
+///
+/// Only the colliding ones gain a kind, because `stress::stress` reads better
+/// than `stress::bin::stress` and most packages have no collision.
+fn disambiguate(targets: &mut [Target]) {
+    let mut seen: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for target in targets.iter() {
+        *seen.entry(target.id.clone()).or_default() += 1;
+    }
+    for target in targets.iter_mut() {
+        if seen.get(&target.id).is_some_and(|count| *count > 1) {
+            target.id = format!("{}::{}::{}", target.package, target.kind, target.name);
+        }
+    }
+}
+
 /// Whether the directory holds one package or a workspace of them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectKind {
@@ -177,9 +198,20 @@ pub fn discover(runner: &ToolRunner, root: &Path) -> Result<(ProjectKind, Vec<Ta
                 continue;
             }
             report.push_str(&format!("{} {}\n", package.name, target.name));
+            let kind = target
+                .kind
+                .iter()
+                .find(|kind| is_measurable(kind))
+                .map(|kind| kind.to_string())
+                .unwrap_or_else(|| "bin".to_string());
+
             targets.push(Target {
+                // Disambiguated below, once every target is known: a package
+                // with a lib and a bin of the same name needs the kind, and
+                // one without it reads better without.
                 id: format!("{}::{}", package.name, target.name),
                 name: target.name.to_string(),
+                kind,
                 family: TargetFamily::Rust,
                 package: package.name.to_string(),
                 manifest: package.manifest_path.clone().into_std_path_buf(),
@@ -203,6 +235,7 @@ pub fn discover(runner: &ToolRunner, root: &Path) -> Result<(ProjectKind, Vec<Ta
         }
     };
 
+    disambiguate(&mut targets);
     targets.sort_by(|a, b| a.id.cmp(&b.id));
     Ok((kind, targets))
 }

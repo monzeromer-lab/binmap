@@ -111,6 +111,7 @@ fn target() -> Target {
         id: "app::app".into(),
         name: "app".into(),
         family: TargetFamily::Rust,
+        kind: "bin".to_string(),
         package: "app".into(),
         manifest: "Cargo.toml".into(),
         capabilities: Capabilities::none(),

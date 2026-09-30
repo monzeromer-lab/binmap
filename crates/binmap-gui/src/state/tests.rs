@@ -8,6 +8,7 @@ fn target(id: &str, capabilities: &[Capability]) -> Target {
         id: id.into(),
         name: id.rsplit("::").next().unwrap_or(id).into(),
         family: TargetFamily::Rust,
+        kind: "bin".to_string(),
         package: id.split("::").next().unwrap_or(id).into(),
         manifest: "Cargo.toml".into(),
         capabilities: capabilities.iter().copied().collect(),

@@ -696,6 +696,7 @@ dependencies = [
 name = "binmap-build"
 version = "0.1.0"
 dependencies = [
+ "binmap-binary",
  "binmap-core",
  "binmap-measure",
  "binmap-session",
@@ -724,6 +725,7 @@ dependencies = [
 name = "binmap-eval"
 version = "0.1.0"
 dependencies = [
+ "binmap-binary",
  "binmap-build",
  "binmap-core",
  "binmap-measure",

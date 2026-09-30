@@ -51,6 +51,8 @@ struct Inner {
     /// Sweep state per run, so a cancelled sweep can be resumed and a finished
     /// one can be written into the session artifact.
     runs: Mutex<BTreeMap<RunId, SweepState>>,
+    /// The most recent size attribution, for the Size Explorer to read.
+    attribution: Mutex<Option<binmap_binary::attribution::Attribution>>,
     next_run: AtomicU64,
     /// Where sessions live.
     ///
@@ -104,6 +106,7 @@ impl BinmapEngine {
                 findings: Mutex::new(Vec::new()),
                 proposals: Mutex::new(Vec::new()),
                 runs: Mutex::new(BTreeMap::new()),
+                attribution: Mutex::new(None),
                 next_run: AtomicU64::new(0),
                 sessions,
             }),
@@ -448,6 +451,54 @@ impl Inner {
             .collect()
     }
 
+    /// Attribute the artifact's bytes, keeping whatever it finds.
+    fn run_attribution(
+        &self,
+        run: RunId,
+        target: &Target,
+        events: &dyn EventSink,
+        cancellation: &Cancellation,
+    ) {
+        let analysis = crate::attribute::SizeAnalysis {
+            builder: &self.builder,
+            runner: &self.runner,
+            own_crates: self.own_crates(),
+        };
+
+        let collector = FindingCollector { inner: events, findings: Mutex::new(Vec::new()) };
+        match analysis.run(run.clone(), target, &collector, cancellation) {
+            Ok(attribution) => {
+                self.findings
+                    .lock()
+                    .expect("findings poisoned")
+                    .extend(collector.findings.into_inner().expect("collector poisoned"));
+                *self.attribution.lock().expect("attribution poisoned") = Some(attribution);
+            }
+            Err(Error::Cancelled) => {
+                events.emit(EngineEvent::Cancelled { run, completed: 0 });
+            }
+            Err(error) => {
+                events.emit(EngineEvent::Failed { run, error: error.to_string() });
+            }
+        }
+    }
+
+    /// The crates the user wrote.
+    ///
+    /// Read from the workspace members, because there is no marker in a symbol
+    /// name for "mine" and guessing from the crate name would be wrong for
+    /// anyone whose crate is called `serde`.
+    fn own_crates(&self) -> Vec<String> {
+        self.targets
+            .read()
+            .expect("targets poisoned")
+            .iter()
+            .map(|target| target.package.replace('-', "_"))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     /// Write everything this session knows to disk.
     fn persist(&self, target: &Target) -> Result<()> {
         let mut artifact = SessionArtifact::new(self.metadata_for(target))
@@ -569,6 +620,30 @@ impl Engine for BinmapEngine {
                 );
                 (run, target)
             }
+            // Attribution is a single build and a read, so it detaches like a
+            // sweep does — a large binary's symbol table takes long enough
+            // that blocking the interface on it would be felt.
+            Request::AttributeSize { target } => {
+                let target = self.inner.target_by_id(&target)?;
+                target.capabilities.require(binmap_core::Capability::SizeAttribution)?;
+
+                let run = RunId(format!("size-{}", target.id.replace("::", "-")));
+                let inner = Arc::clone(&self.inner);
+                let detached = run.clone();
+                let detached_cancellation = cancellation.clone();
+                std::thread::Builder::new()
+                    .name(format!("binmap-{run}"))
+                    .spawn(move || {
+                        inner.run_attribution(
+                            detached,
+                            &target,
+                            events.as_ref(),
+                            &detached_cancellation,
+                        );
+                    })
+                    .map_err(|source| Error::Other(format!("could not start the run: {source}")))?;
+                return Ok((run, cancellation));
+            }
             // Applying is not a sweep: it is one write, it finishes in
             // milliseconds, and the user is waiting for the answer. It runs
             // here rather than being detached onto a thread.
@@ -650,6 +725,15 @@ impl Engine for BinmapEngine {
                 0
             }
         }
+    }
+
+    fn attribution(&self) -> Option<serde_json::Value> {
+        self.inner
+            .attribution
+            .lock()
+            .expect("attribution poisoned")
+            .as_ref()
+            .and_then(|attribution| serde_json::to_value(attribution).ok())
     }
 
     fn sweeps(&self) -> Vec<SweepSummary> {

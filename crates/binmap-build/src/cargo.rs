@@ -99,6 +99,19 @@ impl CargoBuildSystem {
         arguments.extend(configuration.unstable_args(self.host_triple.as_deref()));
         arguments.push("--package".into());
         arguments.push(target.package.clone());
+
+        // Name the target, not just the package. A package with a lib and a
+        // bin builds both otherwise, and the artifact lookup then takes
+        // whichever cargo mentioned last — which is not necessarily the one
+        // that was asked for.
+        match target.kind.as_str() {
+            "bin" => {
+                arguments.push("--bin".into());
+                arguments.push(target.name.clone());
+            }
+            "lib" | "rlib" | "cdylib" | "staticlib" => arguments.push("--lib".into()),
+            _ => {}
+        }
         // The target directory travels in the environment rather than on the
         // command line, so the gates inherit it with everything else.
         // JSON on stdout for the artifact paths, rendered diagnostics on
@@ -281,6 +294,7 @@ mod tests {
             id: "app::app".into(),
             name: "app".into(),
             family: TargetFamily::Rust,
+            kind: "bin".to_string(),
             package: "app".into(),
             manifest: "Cargo.toml".into(),
             capabilities: Capabilities::none(),

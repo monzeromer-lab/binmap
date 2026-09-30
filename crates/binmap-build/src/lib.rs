@@ -7,6 +7,7 @@
 //! to the user's target directory, so a sweep never costs them the incremental
 //! cache they will want back the moment it finishes (`F0.8`).
 
+pub mod attribute;
 pub mod cargo;
 pub mod engine;
 pub mod environment;
